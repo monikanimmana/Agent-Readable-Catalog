@@ -5,6 +5,9 @@ import './ChatWindow.css';
 
 const API_BASE = 'http://localhost:8001';
 
+// Log to console to verify component is loaded
+console.log('ChatWindow component loaded, API_BASE:', API_BASE);
+
 export function ChatWindow() {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);

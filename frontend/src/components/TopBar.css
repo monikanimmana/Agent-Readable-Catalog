@@ -3,11 +3,13 @@
   justify-content: space-between;
   align-items: center;
   padding: var(--spacing-lg) var(--spacing-xl);
-  background-color: var(--surface);
+  background: linear-gradient(135deg, var(--surface) 0%, rgba(20, 20, 28, 0.8) 100%);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
   z-index: 100;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
 }
 
 .top-bar-left {
@@ -16,11 +18,22 @@
   gap: var(--spacing-lg);
 }
 
+.app-logo {
+  font-size: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .app-name {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-size: 22px;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   margin: 0;
+  letter-spacing: -0.5px;
 }
 
 .top-bar-right {
@@ -34,19 +47,31 @@
   align-items: center;
   gap: var(--spacing-md);
   padding: var(--spacing-md) var(--spacing-lg);
-  background-color: var(--surface-elevated);
-  border: 1px solid var(--border);
+  background: linear-gradient(135deg, rgba(45, 212, 191, 0.1), rgba(45, 212, 191, 0.05));
+  border: 1px solid var(--primary);
   border-radius: var(--radius-md);
+  transition: all 0.3s ease;
+}
+
+.user-badge:hover {
+  background: linear-gradient(135deg, rgba(45, 212, 191, 0.15), rgba(45, 212, 191, 0.1));
+  box-shadow: 0 0 12px rgba(45, 212, 191, 0.2);
 }
 
 .avatar {
-  font-size: 20px;
+  font-size: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 36px;
+  height: 36px;
+  background-color: var(--surface-elevated);
+  border-radius: 50%;
+  border: 1px solid var(--primary);
 }
 
 .user-name {
-  font-size: 14px;
-  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
 }
