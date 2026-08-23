@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
 
-from database import init_db, get_db, Product
-from schemas import ChatRequest, ChatResponse, AuditLogEntry
+from database import init_db, get_db, Product, AuditLog
+from schemas import ChatRequest, ChatResponse
 from search import search_products as db_search_products, check_product_stock, get_product_price
 from audit import log_action, get_audit_logs
 from razorpay_service import RazorpayGuardedClient, get_razorpay_client
@@ -219,7 +219,7 @@ async def search_endpoint(query: str, max_price: Optional[float] = None, db: Ses
 
 # ==================== AUDIT LOG ENDPOINTS ====================
 
-@app.get("/audit-log", response_model=List[AuditLogEntry])
+@app.get("/audit-log", response_model=List[Dict[str, Any]])
 async def get_audit_log(
     action_type: Optional[str] = None,
     status: Optional[str] = None,
@@ -228,7 +228,19 @@ async def get_audit_log(
 ):
     """Get audit trail, most recent first."""
     logs = get_audit_logs(db, action_type=action_type, status=status, limit=limit)
-    return logs
+    return [
+        {
+            "id": log.id,
+            "timestamp": log.timestamp.isoformat(),
+            "action_type": log.action_type,
+            "input_data": log.input_data,
+            "output_data": log.output_data,
+            "razorpay_order_id": log.razorpay_order_id,
+            "status": log.status,
+            "user_message": log.user_message,
+        }
+        for log in logs
+    ]
 
 
 # ==================== AGENT CHAT ENDPOINT ====================
@@ -373,7 +385,7 @@ The user might mention a budget. If they do, remember it and ensure no purchase 
             final_response = "I couldn't process your request. Please try again."
         
         # Get the latest audit log entry
-        latest_log = db.query(AuditLogEntry).order_by(AuditLogEntry.id.desc()).first()
+        latest_log = db.query(AuditLog).order_by(AuditLog.id.desc()).first()
         
         return ChatResponse(
             reply=final_response,
