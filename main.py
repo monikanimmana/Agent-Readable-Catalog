@@ -52,49 +52,37 @@ def get_mock_agent_response(user_message: str, db: Session) -> tuple[str, list]:
     """
     Generate a mock agent response for demo purposes when Gemini API is unavailable.
     Still logs actions to audit_log for transparency.
+    Queries real product data from database.
     """
     user_lower = user_message.lower()
     tool_calls = []
     
-    # Mock search
-    if any(word in user_lower for word in ["search", "find", "looking", "show", "want", "need", "find me"]):
-        tool_calls.append("search_products")
-        
-        # Extract search query
-        query = "shirt"
-        for word in user_message.split():
-            if word.lower() not in ["search", "for", "find", "me", "a", "the", "looking"]:
-                query = word
-                break
-        
-        log_action(
-            db=db,
-            action_type="search",
-            status="success",
-            input_data={"query": query},
-            output_data={"results_count": 3},
-            user_message=user_message
-        )
-        
-        return (
-            f"I found 3 items matching '{query}':\n\n"
-            "1. **Classic Blue Shirt** - ₹1,299\n   Size: M, L, XL | In Stock\n\n"
-            "2. **Striped Cotton Shirt** - ₹1,599\n   Size: S, M, L | In Stock\n\n"
-            "3. **Designer Formal Shirt** - ₹2,499\n   Size: M, L, XL, XXL | In Stock\n\n"
-            "Would you like to buy any of these, or should I search for something else?",
-            tool_calls
-        )
+    # Check for purchase intent FIRST (before search)
+    purchase_keywords = ["buy", "purchase", "checkout", "order", "add to cart"]
+    is_purchase = any(keyword in user_lower for keyword in purchase_keywords)
     
-    # Mock purchase
-    elif any(word in user_lower for word in ["buy", "purchase", "checkout", "order"]):
+    # Mock purchase - use real product data
+    if is_purchase:
+        # Try to find first available product from previous search or get product ID from message
+        # For now, get first in-stock product
+        first_product = db.query(Product).filter(Product.stock > 0).first()
+        
+        if not first_product:
+            return (
+                "Sorry, all products are currently out of stock. Please try again later.",
+                []
+            )
+        
         tool_calls.extend(["check_stock", "initiate_purchase"])
+        
+        stock_data = {"in_stock": True, "quantity": first_product.stock}
         
         log_action(
             db=db,
             action_type="check_stock",
             status="success",
-            input_data={"product_id": 1},
-            output_data={"in_stock": True, "quantity": 10},
+            input_data={"product_id": first_product.id},
+            output_data=stock_data,
             user_message=user_message
         )
         
@@ -102,23 +90,83 @@ def get_mock_agent_response(user_message: str, db: Session) -> tuple[str, list]:
             db=db,
             action_type="purchase_attempt",
             status="success",
-            input_data={"product_id": 1, "quantity": 1},
+            input_data={"product_id": first_product.id, "quantity": 1},
             output_data={"order_id": "order_test_123", "status": "pending"},
             razorpay_order_id="order_test_123",
             user_message=user_message
         )
         
         return (
-            "Great! I've created a test order for the Classic Blue Shirt.\n\n"
-            "**Order Details:**\n"
-            "- Product: Classic Blue Shirt\n"
-            "- Quantity: 1\n"
-            "- Price: ₹1,299\n"
-            "- Status: Pending payment\n\n"
-            "This is a test mode demo, so no actual payment is required. "
-            "In production, you'd complete the Razorpay payment flow here.",
+            f"Great! I've created a test order for {first_product.name}.\n\n"
+            f"**Order Details:**\n"
+            f"- Product: {first_product.name}\n"
+            f"- Quantity: 1\n"
+            f"- Price: ₹{first_product.price}\n"
+            f"- Status: Pending payment\n\n"
+            f"This is a test mode demo, so no actual payment is required. "
+            f"In production, you'd complete the Razorpay payment flow here.",
             tool_calls
         )
+    
+    # Mock search - query real products
+    # Check if user is asking to find/search for something
+    search_keywords = ["search", "find", "looking", "show", "want", "need", "looking for", "find me"]
+    is_search = any(keyword in user_lower for keyword in search_keywords)
+    
+    # If not explicit search keywords, treat any input as potential product search
+    if not is_search and len(user_message.split()) <= 3:
+        is_search = True
+    
+    if is_search:
+        tool_calls.append("search_products")
+        
+        # Extract search query more intelligently
+        query = user_message.strip()
+        
+        # Remove common search keywords to get the actual query
+        for keyword in search_keywords:
+            if keyword in user_lower:
+                idx = user_lower.index(keyword)
+                after_keyword = user_message[idx + len(keyword):].strip()
+                if after_keyword and len(after_keyword) > 1:
+                    query = after_keyword
+                    break
+        
+        # If query is empty or too short, use whole message
+        if not query or len(query) < 2:
+            query = user_message.strip()
+        
+        # Search products in database
+        products = db_search_products(db, query)
+        
+        log_action(
+            db=db,
+            action_type="search",
+            status="success",
+            input_data={"query": query},
+            output_data={"results_count": len(products)},
+            user_message=user_message
+        )
+        
+        if not products:
+            # Try a more general search
+            products = db.query(Product).limit(5).all()
+            if not products:
+                return (
+                    f"I couldn't find any products matching '{query}'. "
+                    "Try searching for something else like 'shirt', 'shoes', 'headphones', etc.",
+                    tool_calls
+                )
+        
+        # Format product list
+        product_text = f"I found {len(products)} items matching '{query}':\n\n"
+        for idx, product in enumerate(products[:5], 1):
+            stock_status = "In Stock" if product.stock > 0 else "Out of Stock"
+            product_text += f"{idx}. **{product.name}** - ₹{product.price}\n   {stock_status} ({product.stock} available)\n\n"
+        
+        product_text += "Would you like to buy any of these, or should I search for something else?"
+        
+        return (product_text, tool_calls)
     
     # Default response
     else:
