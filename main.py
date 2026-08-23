@@ -50,109 +50,54 @@ except Exception as e:
 
 def get_mock_agent_response(user_message: str, db: Session) -> tuple[str, list]:
     """
-    Generate a mock agent response for demo purposes when Gemini API is unavailable.
-    Still logs actions to audit_log for transparency.
-    Queries real product data from database.
-    Uses smarter intent detection and synonym handling.
+    Generate a mock agent response with PROPER INTENT DETECTION.
+    
+    CRITICAL: Only searches for products when user is asking about shopping.
+    For greetings, questions, or off-topic messages, responds conversationally
+    WITHOUT calling search_products tool.
+    
+    This fixes the bug where EVERY message was treated as a product search.
     """
-    user_lower = user_message.lower()
+    user_lower = user_message.lower().strip()
     tool_calls = []
     
-    # Synonym mapping - map user queries to actual product keywords
-    synonyms = {
-        "tops": "shirt",
-        "t-shirt": "shirt",
-        "tshirt": "shirt",
-        "clothing": "shirt",
-        "apparel": "shirt",
-        "clothes": "shirt",
-        "wear": "shirt",
-        "footwear": "shoes",
-        "sneakers": "shoes",
-        "boots": "shoes",
-        "audio": "headphones",
-        "earphones": "headphones",
-        "earbuds": "headphones",
-        "music": "headphones",
-        "sound": "headphones",
-        "speaker": "speaker",
-        "water": "bottle",
-        "drink": "bottle",
-        "beverage": "tea",
-        "tea": "tea",
-        "coffee": "tea",
-        "drink": "tea",
-        "exercise": "dumbbell",
-        "workout": "dumbbell",
-        "fitness": "dumbbell",
-        "gym": "dumbbell",
-        "weights": "dumbbell",
-        "yoga": "mat",
-        "meditation": "mat",
-        "mat": "mat",
-        "exercise mat": "mat",
-        "watch": "watch",
-        "smartwatch": "watch",
-        "fitness tracker": "watch",
-        "board": "board",
-        "cutting": "board",
-        "kitchen": "board",
-        "cable": "cable",
-        "charger": "cable",
-        "usb": "cable",
-        "charge": "cable",
-        "power": "power bank",
-        "bank": "power bank",
-        "solar": "power bank",
-        "portable": "power bank",
-        "bag": "bag",
-        "messenger": "bag",
-        "leather": "bag",
-        "plant": "plant",
-        "monstera": "plant",
-        "green": "plant",
-        "indoor": "plant",
-        "earplugs": "earplugs",
-        "noise": "earplugs",
-        "keyboard": "keyboard",
-        "mechanical": "keyboard",
-        "rgb": "keyboard",
-        "gaming": "keyboard",
-        "sunscreen": "sunscreen",
-        "screen": "sunscreen",
-        "spf": "sunscreen",
-        "protection": "sunscreen",
-        "toothbrush": "toothbrush",
-        "bamboo": "toothbrush",
-        "teeth": "toothbrush",
-    }
+    # ===== INTENT DETECTION =====
+    # Shopping intents - these SHOULD trigger search
+    shopping_keywords = [
+        "find", "search", "show", "what", "have", "available", 
+        "looking for", "want", "need", "price", "cost", "like",
+        "product", "item", "recommend", "suggest"
+    ]
+    is_shopping_intent = any(keyword in user_lower for keyword in shopping_keywords)
     
-    # Check for purchase intent FIRST (before search)
-    purchase_keywords = ["buy", "purchase", "checkout", "order", "add to cart", "want to buy", "i'll take", "add cart"]
+    # Non-shopping intents - these should NOT search
+    off_topic_keywords = [
+        "who are you", "about", "application", "company", "help", 
+        "hello", "hi", "hey", "thanks", "thank you", "how are you",
+        "what is razorpay", "how does it work", "contact", "support",
+        "return", "refund", "warranty", "shipping", "delivery",
+        "payment", "security", "privacy", "terms"
+    ]
+    is_off_topic = any(keyword in user_lower for keyword in off_topic_keywords)
+    
+    # ===== HANDLE PURCHASES =====
+    purchase_keywords = ["buy", "purchase", "checkout", "order", "add to cart", "want to buy", "i'll take"]
     is_purchase = any(keyword in user_lower for keyword in purchase_keywords)
     
-    # Mock purchase - use real product data
     if is_purchase:
-        # Try to find first available product from previous search or get product ID from message
-        # For now, get first in-stock product
         first_product = db.query(Product).filter(Product.stock > 0).first()
         
         if not first_product:
-            return (
-                "Sorry, all products are currently out of stock. Please try again later.",
-                []
-            )
+            return ("Sorry, all products are currently out of stock.", [])
         
-        tool_calls.extend(["check_stock", "initiate_purchase"])
-        
-        stock_data = {"in_stock": True, "quantity": first_product.stock}
+        tool_calls = ["check_stock", "initiate_purchase"]
         
         log_action(
             db=db,
             action_type="check_stock",
             status="success",
             input_data={"product_id": first_product.id},
-            output_data=stock_data,
+            output_data={"in_stock": True, "quantity": first_product.stock},
             user_message=user_message
         )
         
@@ -167,96 +112,107 @@ def get_mock_agent_response(user_message: str, db: Session) -> tuple[str, list]:
         )
         
         return (
-            f"Great! I've created a test order for {first_product.name}.\n\n"
-            f"**Order Details:**\n"
-            f"- Product: {first_product.name}\n"
-            f"- Quantity: 1\n"
-            f"- Price: ₹{first_product.price}\n"
-            f"- Status: Pending payment\n\n"
-            f"This is a test mode demo, so no actual payment is required. "
-            f"In production, you'd complete the Razorpay payment flow here.",
+            f"Great! Order created for **{first_product.name}** (₹{first_product.price}). "
+            f"Status: Pending payment.",
             tool_calls
         )
     
-    # Everything else is treated as a search query
-    # (questions about products, requests to find things, etc.)
-    tool_calls.append("search_products")
+    # ===== HANDLE OFF-TOPIC MESSAGES - NO SEARCH =====
+    if is_off_topic and not is_shopping_intent:
+        log_action(
+            db=db,
+            action_type="chat",
+            status="success",
+            input_data={"message": user_message, "intent": "off_topic"},
+            output_data={"response": "conversational"},
+            user_message=user_message
+        )
+        
+        # Conversational responses
+        if "hello" in user_lower or "hi" in user_lower or "hey" in user_lower:
+            return ("Hi! I'm your shopping assistant. What would you like to find?", [])
+        elif "thanks" in user_lower or "thank you" in user_lower:
+            return ("You're welcome! Anything else I can help with?", [])
+        elif "about" in user_lower or "application" in user_lower:
+            return (
+                "I'm an AI Shopping Agent that helps you find and purchase products. "
+                "I can search products, check prices, and help with orders. What would you like to buy?",
+                []
+            )
+        elif "help" in user_lower:
+            return (
+                "I can help you:\n1. Search for products (e.g., 'Show me shirts')\n"
+                "2. Check prices\n3. Buy products (e.g., 'I want to buy it')\n\n"
+                "What would you like?",
+                []
+            )
+        else:
+            return ("That's interesting! How can I help you shop today?", [])
     
-    # Extract the search query from user message
-    # Remove common stop words and extract meaningful query
-    stop_words = ["what", "show", "find", "me", "i", "want", "can", "you", "please", 
-                  "looking", "for", "search", "a", "the", "do", "have", "is", "are",
-                  "any", "some", "all", "get", "give", "tell", "see", "do", "you"]
+    # ===== HANDLE SHOPPING QUERIES - SEARCH ONLY HERE =====
+    if is_shopping_intent:
+        tool_calls = ["search_products"]
+        
+        # Extract search query
+        stop_words = ["what", "show", "find", "me", "i", "want", "can", "you", "please", 
+                      "looking", "for", "search", "a", "the", "do", "have", "is", "are",
+                      "any", "some", "all", "get", "give", "tell", "see"]
+        
+        query_words = []
+        for word in user_message.lower().split():
+            clean_word = word.strip('.,!?;:')
+            if clean_word and clean_word not in stop_words and len(clean_word) > 2:
+                query_words.append(clean_word)
+        
+        query = " ".join(query_words) if query_words else user_message.strip()
+        
+        if not query or len(query) < 2:
+            query = user_message.strip()
+        
+        products = db_search_products(db, query)
+        
+        log_action(
+            db=db,
+            action_type="search",
+            status="success",
+            input_data={"query": query, "user_input": user_message},
+            output_data={"results_count": len(products)},
+            user_message=user_message
+        )
+        
+        if not products:
+            all_products = db.query(Product).limit(5).all()
+            if all_products:
+                return (
+                    f"No exact matches for '{query}', but here are some popular items:\n\n"
+                    + format_product_list(all_products),
+                    tool_calls
+                )
+            return ("No products found.", tool_calls)
+        
+        product_text = f"I found {len(products)} items:\n\n"
+        product_text += format_product_list(products[:8])
+        
+        return (product_text, tool_calls)
     
-    query_words = []
-    for word in user_message.lower().split():
-        # Clean punctuation
-        clean_word = word.strip('.,!?;:')
-        if clean_word and clean_word not in stop_words and len(clean_word) > 2:
-            query_words.append(clean_word)
-    
-    query = " ".join(query_words) if query_words else user_message.strip()
-    
-    # If still empty or very short, use original message
-    if not query or len(query) < 2:
-        query = user_message.strip()
-    
-    # Apply synonym mapping - replace user words with actual product keywords
-    for user_word, product_keyword in synonyms.items():
-        if user_word in query.lower():
-            query = query.lower().replace(user_word, product_keyword)
-            break
-    
-    # Search products in database
-    products = db_search_products(db, query)
-    
+    # ===== DEFAULT: Unclear message - ask for clarification, NO SEARCH =====
     log_action(
         db=db,
-        action_type="search",
+        action_type="chat",
         status="success",
-        input_data={"query": query, "original_query": user_message},
-        output_data={"results_count": len(products)},
+        input_data={"message": user_message, "intent": "unclear"},
+        output_data={"response": "clarification_needed"},
         user_message=user_message
     )
     
-    if not products:
-        # Try a more general search with each word separately
-        all_products = []
-        for word in query_words[:2]:  # Try first 2 meaningful words
-            # Check if word has a synonym
-            mapped_word = synonyms.get(word, word)
-            products = db_search_products(db, mapped_word)
-            all_products.extend(products)
-        
-        # Remove duplicates
-        seen_ids = set()
-        products = []
-        for p in all_products:
-            if p.id not in seen_ids:
-                products.append(p)
-                seen_ids.add(p.id)
-    
-    if not products:
-        # No products found, show all available products
-        products = db.query(Product).limit(8).all()
-        if not products:
-            return (
-                f"I couldn't find any products matching '{user_message}'. "
-                "Try searching for something like 'shirt', 'shoes', 'headphones', 'water bottle', 'tea', etc.",
-                tool_calls
-            )
-        
-        return (
-            f"I couldn't find exact matches for '{user_message}', but here are some popular items:\n\n"
-            + format_product_list(products),
-            tool_calls
-        )
-    
-    # Format product list
-    product_text = f"Perfect! I found {len(products)} items matching '{user_message}':\n\n"
-    product_text += format_product_list(products[:8])
-    
-    return (product_text, tool_calls)
+    return (
+        "I'm not sure. Could you tell me:\n"
+        "- 'Show me [product]' to search\n"
+        "- 'I want to buy' to purchase\n"
+        "- Or ask me anything about the app?\n\n"
+        "What would you like?",
+        []
+    )
 
 
 def format_product_list(products: list) -> str:
