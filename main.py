@@ -248,7 +248,7 @@ async def get_audit_log(
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     """
-    Chat with the AI agent.
+    Chat with the AI agent using Gemini with function calling.
     
     The agent will:
     1. Understand the user's intent
@@ -260,20 +260,7 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     budget = request.budget
     
     try:
-        # Track tool calls made by the agent
         tool_calls_made = []
-        
-        # Create messages for multi-turn conversation
-        messages = [
-            {
-                "role": "user",
-                "content": user_message
-            }
-        ]
-        
-        # If budget was provided, add context
-        if budget:
-            messages[0]["content"] += f"\n\n[Note: User's budget constraint is ₹{budget}]"
         
         system_prompt = """You are an AI shopping assistant for an e-commerce catalog. Your role is to:
 1. Help users find products
@@ -284,117 +271,122 @@ IMPORTANT RULES:
 - ALWAYS search for products first
 - ALWAYS check stock before attempting to purchase
 - ALWAYS respect budget constraints
-- Be helpful and explain each step clearly
-
-The user might mention a budget. If they do, remember it and ensure no purchase exceeds it."""
+- Be helpful and explain each step clearly"""
         
-        # Call Gemini with tools
+        # Build initial context
+        user_content = user_message
+        if budget:
+            user_content += f"\n\n[Note: User's budget constraint is ₹{budget}]"
+        
+        # Initial request to Gemini
+        messages = [{"role": "user", "content": user_content}]
+        
+        # Call Gemini with tools available
         response = model.generate_content(
-            messages,
+            user_content,
             tools=TOOL_DEFINITIONS,
             system_instruction=system_prompt,
         )
         
-        # Process Gemini's response and execute tool calls if needed
-        final_response = None
-        
+        # Check for tool calls in response
+        tool_result = None
         if response.content.parts:
-            part = response.content.parts[0]
-            
-            # Check if Gemini is calling tools
-            if hasattr(part, 'function_call'):
-                # Execute tool calls
-                tool_call = part.function_call
-                tool_name = tool_call.name
-                tool_args = {arg.name: arg.value for arg in tool_call.args}
-                
-                tool_calls_made.append(f"{tool_name}({', '.join(f'{k}={v}' for k, v in tool_args.items())})")
-                
-                # Execute the appropriate tool
-                tool_result = None
-                
-                if tool_name == "search_products":
-                    tool_result = tool_search_products(
-                        db,
-                        query=tool_args.get("query", ""),
-                        max_price=tool_args.get("max_price"),
-                        size=tool_args.get("size")
-                    )
-                    log_action(
-                        db=db,
-                        action_type="search",
-                        status="success",
-                        input_data=tool_args,
-                        output_data={"results_count": tool_result.get("results_count", 0)},
-                        user_message=user_message
-                    )
-                
-                elif tool_name == "check_stock":
-                    product_id = tool_args.get("product_id")
-                    tool_result = tool_check_stock(db, product_id)
-                    log_action(
-                        db=db,
-                        action_type="check_stock",
-                        status="success",
-                        input_data=tool_args,
-                        output_data=tool_result,
-                        user_message=user_message
-                    )
-                
-                elif tool_name == "get_price":
-                    product_id = tool_args.get("product_id")
-                    tool_result = tool_get_price(db, product_id)
-                    log_action(
-                        db=db,
-                        action_type="get_price",
-                        status="success",
-                        input_data=tool_args,
-                        output_data=tool_result,
-                        user_message=user_message
-                    )
-                
-                elif tool_name == "initiate_purchase":
-                    product_id = tool_args.get("product_id")
-                    quantity = tool_args.get("quantity", 1)
-                    tool_result = tool_initiate_purchase(
-                        db,
-                        product_id=product_id,
-                        quantity=quantity,
-                        budget_constraint=budget,
-                        user_message=user_message
-                    )
-                
-                # Now call Gemini again with the tool result
-                messages.append({
-                    "role": "model",
-                    "content": response.content  # Include the tool call
-                })
-                messages.append({
-                    "role": "user",
-                    "content": f"Tool result: {json.dumps(tool_result)}"
-                })
-                
-                # Get final response from Gemini
-                final_response_obj = model.generate_content(messages)
-                final_response = final_response_obj.text if final_response_obj.text else "Purchase completed."
-            else:
-                # No tool call, just a text response
-                final_response = part.text if hasattr(part, 'text') else str(part)
+            for part in response.content.parts:
+                if hasattr(part, 'function_call'):
+                    # Gemini is calling a tool
+                    tool_call = part.function_call
+                    tool_name = tool_call.name
+                    tool_args = {arg.name: arg.value for arg in tool_call.args}
+                    
+                    tool_calls_made.append(f"{tool_name}")
+                    
+                    # Execute the tool
+                    if tool_name == "search_products":
+                        tool_result = tool_search_products(
+                            db,
+                            query=tool_args.get("query", ""),
+                            max_price=tool_args.get("max_price"),
+                            size=tool_args.get("size")
+                        )
+                        log_action(
+                            db=db,
+                            action_type="search",
+                            status="success",
+                            input_data=tool_args,
+                            output_data={"results_count": tool_result.get("results_count", 0)},
+                            user_message=user_message
+                        )
+                    
+                    elif tool_name == "check_stock":
+                        tool_result = tool_check_stock(db, tool_args.get("product_id"))
+                        log_action(
+                            db=db,
+                            action_type="check_stock",
+                            status="success",
+                            input_data=tool_args,
+                            output_data=tool_result,
+                            user_message=user_message
+                        )
+                    
+                    elif tool_name == "get_price":
+                        tool_result = tool_get_price(db, tool_args.get("product_id"))
+                        log_action(
+                            db=db,
+                            action_type="get_price",
+                            status="success",
+                            input_data=tool_args,
+                            output_data=tool_result,
+                            user_message=user_message
+                        )
+                    
+                    elif tool_name == "initiate_purchase":
+                        tool_result = tool_initiate_purchase(
+                            db,
+                            product_id=tool_args.get("product_id"),
+                            quantity=tool_args.get("quantity", 1),
+                            budget_constraint=budget,
+                            user_message=user_message
+                        )
+                    
+                    # Call Gemini again with tool result for final response
+                    if tool_result:
+                        follow_up_messages = [
+                            {"role": "user", "content": user_content},
+                            {"role": "model", "content": response.content},
+                            {"role": "user", "content": f"Tool '{tool_name}' returned: {json.dumps(tool_result)}"}
+                        ]
+                        
+                        final_response_obj = model.generate_content(
+                            follow_up_messages,
+                            system_instruction=system_prompt,
+                        )
+                        
+                        # Extract text response
+                        if final_response_obj.content.parts:
+                            for final_part in final_response_obj.content.parts:
+                                if hasattr(final_part, 'text'):
+                                    return ChatResponse(
+                                        reply=final_part.text,
+                                        tool_calls=tool_calls_made
+                                    )
         
-        if not final_response:
-            final_response = "I couldn't process your request. Please try again."
-        
-        # Get the latest audit log entry
-        latest_log = db.query(AuditLog).order_by(AuditLog.id.desc()).first()
+        # Fallback: extract text from initial response
+        if response.content.parts:
+            for part in response.content.parts:
+                if hasattr(part, 'text'):
+                    return ChatResponse(
+                        reply=part.text,
+                        tool_calls=tool_calls_made if tool_calls_made else None
+                    )
         
         return ChatResponse(
-            reply=final_response,
-            tool_calls=tool_calls_made if tool_calls_made else None,
+            reply="I couldn't process your request. Please try again.",
+            tool_calls=tool_calls_made if tool_calls_made else None
         )
     
     except Exception as e:
         # Log error
-        error_log = log_action(
+        log_action(
             db=db,
             action_type="chat_error",
             status="failed",
