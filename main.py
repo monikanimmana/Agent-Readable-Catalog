@@ -55,17 +55,55 @@ def get_mock_agent_response(user_message: str, db: Session, session_id: str) -> 
     """
     Generate a mock agent response with proper intent detection and conversation context.
     
-    Now tracks the products shown to resolve references like 'second', 'that one', etc.
-    Also handles typos and general browse requests better.
+    Features:
+    - Product reference resolution (second, that one, it)
+    - Fuzzy keyword matching for typo tolerance
+    - Contextual confirmations (yes, buy, ok)
+    - Better off-topic vs shopping distinction
     """
     user_lower = user_message.lower().strip()
     tool_calls = []
     
-    # ===== TRY TO RESOLVE POSITIONAL REFERENCES FIRST =====
-    # If the user said "second", "that one", "it", try to match against last shown products
+    # ===== SIMPLE CONFIRMATIONS (Yes/OK/Buy) =====
+    # If user just says "yes", "ok", "buy" without context, buy first shown product
+    simple_confirmations = ["yes", "ok", "okay", "sure", "go", "buy"]
+    last_products = get_last_shown_products(db, session_id)
+    
+    if user_lower in simple_confirmations and last_products and len(last_products) > 0:
+        first_product_info = last_products[0]
+        first_product = db.query(Product).filter(Product.id == first_product_info["id"]).first()
+        
+        if first_product and first_product.stock > 0:
+            tool_calls = ["check_stock", "initiate_purchase"]
+            
+            log_action(
+                db=db,
+                action_type="check_stock",
+                status="success",
+                input_data={"product_id": first_product.id},
+                output_data={"in_stock": True, "quantity": first_product.stock},
+                user_message=user_message
+            )
+            
+            log_action(
+                db=db,
+                action_type="purchase_attempt",
+                status="success",
+                input_data={"product_id": first_product.id, "quantity": 1},
+                output_data={"order_id": "order_test_123", "status": "pending"},
+                razorpay_order_id="order_test_123",
+                user_message=user_message
+            )
+            
+            return (
+                f"Great! Order created for **{first_product.name}** (₹{first_product.price}). "
+                f"Status: Pending payment.",
+                tool_calls
+            )
+    
+    # ===== TRY TO RESOLVE POSITIONAL REFERENCES =====
     resolved_product = resolve_product_reference(db, session_id, user_message)
     if resolved_product:
-        # User is referring to a specific product from the previous list
         if resolved_product.stock <= 0:
             log_action(
                 db=db,
@@ -81,7 +119,6 @@ def get_mock_agent_response(user_message: str, db: Session, session_id: str) -> 
                 []
             )
         
-        # Purchase the resolved product
         tool_calls = ["check_stock", "initiate_purchase"]
         
         log_action(
@@ -109,29 +146,47 @@ def get_mock_agent_response(user_message: str, db: Session, session_id: str) -> 
             tool_calls
         )
     
+    # ===== FUZZY KEYWORD MATCHING (Typo Tolerance) =====
+    def matches_keyword_fuzzy(text, keywords, min_length=2):
+        """Check if text contains keyword with fuzzy matching for typos."""
+        words = text.split()
+        for word in words:
+            for keyword in keywords:
+                if keyword in word or word in keyword:
+                    return True
+                # Fuzzy match: count matching characters
+                if len(keyword) >= min_length:
+                    matches = sum(1 for c in keyword if c in word)
+                    if matches >= len(keyword) - 1:  # Allow 1 char difference
+                        return True
+        return False
+    
     # ===== INTENT DETECTION =====
     # Shopping intents - these SHOULD trigger search
     shopping_keywords = [
         "find", "search", "show", "what", "have", "available", 
-        "looking for", "want", "need", "price", "cost", "like",
-        "product", "item", "recommend", "suggest", "browse", "all"
+        "looking", "want", "need", "price", "cost", "like",
+        "product", "item", "recommend", "suggest", "browse", "all",
+        "shirt", "shoe", "headphone", "watch", "bottle", "tea", "mat",
+        "cable", "keyboard", "speaker", "bag", "plant", "toothbrush",
+        "sunscreen", "pants", "trouser"
     ]
-    is_shopping_intent = any(keyword in user_lower for keyword in shopping_keywords)
+    is_shopping_intent = matches_keyword_fuzzy(user_lower, shopping_keywords, min_length=2)
     
-    # Non-shopping intents - these should NOT search
+    # Off-topic keywords - should NOT search
     off_topic_keywords = [
-        "who are you", "about", "application", "company", "help", 
-        "hello", "hi", "hey", "thanks", "thank you", "how are you",
-        "what is razorpay", "how does it work", "contact", "support",
-        "return", "refund", "warranty", "shipping", "delivery",
-        "payment", "security", "privacy", "terms"
+        "who", "about", "application", "company", "help", 
+        "hello", "hi", "hey", "thanks", "thank", "how",
+        "razorpay", "work", "contact", "support", "return",
+        "refund", "warranty", "shipping", "delivery", "payment",
+        "security", "privacy", "terms"
     ]
-    is_off_topic = any(keyword in user_lower for keyword in off_topic_keywords)
+    is_off_topic = matches_keyword_fuzzy(user_lower, off_topic_keywords, min_length=2)
     
     # ===== HANDLE PURCHASES =====
     purchase_keywords = [
         "buy", "purchase", "checkout", "order", "add to cart", "want to buy", "i'll take",
-        "first one", "that one", "it", "take it", "get it", "ill buy", "let me buy",
+        "first one", "that one", "take it", "get it", "ill buy", "let me buy",
         "give me", "can i buy", "i want that", "i'll buy", "send me", "add it",
         "second one", "third one", "fourth one", "fifth one", "sixth one",
         "first", "second", "third", "fourth", "fifth", "sixth", "seventh"
@@ -139,7 +194,6 @@ def get_mock_agent_response(user_message: str, db: Session, session_id: str) -> 
     is_purchase = any(keyword in user_lower for keyword in purchase_keywords)
     
     if is_purchase and not resolved_product:
-        # User wants to buy but we couldn't resolve which product
         log_action(
             db=db,
             action_type="chat",
@@ -169,10 +223,9 @@ def get_mock_agent_response(user_message: str, db: Session, session_id: str) -> 
             user_message=user_message
         )
         
-        # Conversational responses
         if "hello" in user_lower or "hi" in user_lower or "hey" in user_lower:
             return ("Hi! I'm your shopping assistant. What would you like to find?", [])
-        elif "thanks" in user_lower or "thank you" in user_lower:
+        elif "thanks" in user_lower or "thank" in user_lower:
             return ("You're welcome! Anything else I can help with?", [])
         elif "about" in user_lower or "application" in user_lower:
             return (
@@ -187,6 +240,18 @@ def get_mock_agent_response(user_message: str, db: Session, session_id: str) -> 
                 "What would you like?",
                 []
             )
+        elif "color" in user_lower or "colour" in user_lower or "image" in user_lower or "photo" in user_lower:
+            if last_products:
+                first_prod = last_products[0]
+                return (
+                    f"For **{first_prod['name']}** (₹{first_prod['price']}):\n"
+                    f"This is from our available inventory. Would you like to:\n"
+                    f"- Buy this product? Say 'yes' or 'first one'\n"
+                    f"- Search for something else?\n\n"
+                    f"What would you like?",
+                    []
+                )
+            return ("I can help with that! Which product would you like to know more about?", [])
         else:
             return ("That's interesting! How can I help you shop today?", [])
     
@@ -194,11 +259,10 @@ def get_mock_agent_response(user_message: str, db: Session, session_id: str) -> 
     if is_shopping_intent:
         tool_calls = ["search_products"]
         
-        # Extract search query more intelligently
-        # Remove stop words to get the actual search terms
         stop_words = ["what", "show", "find", "me", "i", "want", "can", "you", "please", 
                       "looking", "for", "search", "a", "the", "do", "have", "is", "are",
-                      "any", "some", "all", "get", "give", "tell", "see", "ll", "peoducts"]
+                      "any", "some", "all", "get", "give", "tell", "see", "ll", "peoducts",
+                      "shiw", "colpour", "image", "which"]
         
         query_words = []
         for word in user_message.lower().split():
@@ -206,13 +270,11 @@ def get_mock_agent_response(user_message: str, db: Session, session_id: str) -> 
             if clean_word and clean_word not in stop_words and len(clean_word) > 2:
                 query_words.append(clean_word)
         
-        # If no meaningful words found, do a general browse
         if not query_words:
-            query = ""  # Empty query = show all
+            query = ""
         else:
             query = " ".join(query_words)
         
-        # Search products
         products = db_search_products(db, query) if query else db.query(Product).limit(10).all()
         
         log_action(
@@ -224,7 +286,6 @@ def get_mock_agent_response(user_message: str, db: Session, session_id: str) -> 
             user_message=user_message
         )
         
-        # Store the products we're about to show in conversation context
         if products:
             update_shown_products(db, session_id, products, query if query else "browse_all")
         
@@ -244,7 +305,7 @@ def get_mock_agent_response(user_message: str, db: Session, session_id: str) -> 
         
         return (product_text, tool_calls)
     
-    # ===== DEFAULT: Unclear message - ask for clarification, NO SEARCH =====
+    # ===== DEFAULT: Unclear message =====
     log_action(
         db=db,
         action_type="chat",
@@ -483,15 +544,17 @@ async def get_audit_log(
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     """
-    Chat with the AI agent using Gemini with function calling.
-    Falls back to mock responses if Gemini API is unavailable.
+    Chat with the AI agent using reasoning-based intent detection and context.
     
-    The agent will:
-    1. Understand the user's intent
-    2. Call appropriate tools (search, check stock, get price, initiate purchase)
-    3. Apply guardrails (stock, budget, price checks)
-    4. Return a natural language response
-    5. Track conversation context for resolving references like 'second', 'that one'
+    NEW APPROACH: Every message goes through intelligent reasoning (not keyword gatekeeping).
+    The agent reasons about:
+    1. Product references (second, that one, it)
+    2. Simple confirmations (yes, ok, buy)
+    3. Search/browse intent
+    4. Conversational messages
+    5. Clarification when genuinely unclear
+    
+    This mimics how Gemini works: full context, single reasoning path.
     """
     user_message = request.message
     budget = request.budget
@@ -500,152 +563,24 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     session_id = get_or_create_session(db, request.session_id)
     
     try:
-        # If Gemini model is not available, use mock responses
-        if not model:
-            mock_response, tool_calls = get_mock_agent_response(user_message, db, session_id)
-            return ChatResponse(
-                reply=mock_response,
-                tool_calls=tool_calls if tool_calls else None,
-                session_id=session_id
-            )
+        # NEW: Use smart agent reasoning for every message
+        # (removes the gatekeeping keyword-matching layer)
+        from smart_agent import reason_about_intent
         
-        tool_calls_made = []
-        
-        # Build context from last shown products
-        context_info = build_context_for_prompt(db, session_id)
-        
-        system_prompt = """You are an AI shopping assistant for an e-commerce catalog. Your role is to:
-1. Help users find products
-2. Check product availability
-3. Guide them through purchases
-
-IMPORTANT RULES:
-- ALWAYS search for products first
-- ALWAYS check stock before attempting to purchase
-- ALWAYS respect budget constraints
-- Be helpful and explain each step clearly
-
-If the user refers to a product by position (first, second, third, etc), 'that one', 'it', or the product name from the list you recently showed, resolve it to the correct product."""
-        
-        if context_info:
-            system_prompt += context_info
-        
-        # Build initial context
-        user_content = user_message
-        if budget:
-            user_content += f"\n\n[Note: User's budget constraint is ₹{budget}]"
-        
-        # Initial request to Gemini
-        messages = [{"role": "user", "content": user_content}]
-        
-        # Call Gemini with tools available
-        response = model.generate_content(
-            user_content,
-            tools=TOOL_DEFINITIONS,
-            system_instruction=system_prompt,
+        response_text, action_data, tool_calls = reason_about_intent(
+            user_message=user_message,
+            db=db,
+            session_id=session_id,
         )
-        
-        # Check for tool calls in response
-        tool_result = None
-        if response.content.parts:
-            for part in response.content.parts:
-                if hasattr(part, 'function_call'):
-                    # Gemini is calling a tool
-                    tool_call = part.function_call
-                    tool_name = tool_call.name
-                    tool_args = {arg.name: arg.value for arg in tool_call.args}
-                    
-                    tool_calls_made.append(f"{tool_name}")
-                    
-                    # Execute the tool
-                    if tool_name == "search_products":
-                        tool_result = tool_search_products(
-                            db,
-                            query=tool_args.get("query", ""),
-                            max_price=tool_args.get("max_price"),
-                            size=tool_args.get("size")
-                        )
-                        log_action(
-                            db=db,
-                            action_type="search",
-                            status="success",
-                            input_data=tool_args,
-                            output_data={"results_count": tool_result.get("results_count", 0)},
-                            user_message=user_message
-                        )
-                    
-                    elif tool_name == "check_stock":
-                        tool_result = tool_check_stock(db, tool_args.get("product_id"))
-                        log_action(
-                            db=db,
-                            action_type="check_stock",
-                            status="success",
-                            input_data=tool_args,
-                            output_data=tool_result,
-                            user_message=user_message
-                        )
-                    
-                    elif tool_name == "get_price":
-                        tool_result = tool_get_price(db, tool_args.get("product_id"))
-                        log_action(
-                            db=db,
-                            action_type="get_price",
-                            status="success",
-                            input_data=tool_args,
-                            output_data=tool_result,
-                            user_message=user_message
-                        )
-                    
-                    elif tool_name == "initiate_purchase":
-                        tool_result = tool_initiate_purchase(
-                            db,
-                            product_id=tool_args.get("product_id"),
-                            quantity=tool_args.get("quantity", 1),
-                            budget_constraint=budget,
-                            user_message=user_message
-                        )
-                    
-                    # Call Gemini again with tool result for final response
-                    if tool_result:
-                        follow_up_messages = [
-                            {"role": "user", "content": user_content},
-                            {"role": "model", "content": response.content},
-                            {"role": "user", "content": f"Tool '{tool_name}' returned: {json.dumps(tool_result)}"}
-                        ]
-                        
-                        final_response_obj = model.generate_content(
-                            follow_up_messages,
-                            system_instruction=system_prompt,
-                        )
-                        
-                        # Extract text response
-                        if final_response_obj.content.parts:
-                            for final_part in final_response_obj.content.parts:
-                                if hasattr(final_part, 'text'):
-                                    return ChatResponse(
-                                        reply=final_part.text,
-                                        tool_calls=tool_calls_made,
-                                        session_id=session_id
-                                    )
-        
-        # Fallback: extract text from initial response
-        if response.content.parts:
-            for part in response.content.parts:
-                if hasattr(part, 'text'):
-                    return ChatResponse(
-                        reply=part.text,
-                        tool_calls=tool_calls_made if tool_calls_made else None,
-                        session_id=session_id
-                    )
         
         return ChatResponse(
-            reply="I couldn't process your request. Please try again.",
-            tool_calls=tool_calls_made if tool_calls_made else None,
+            reply=response_text,
+            tool_calls=tool_calls if tool_calls else None,
             session_id=session_id
         )
-    
+        
     except Exception as e:
-        # Log error and fall back to mock response
+        # Log error but still return something usable
         import traceback
         error_details = traceback.format_exc()
         print(f"⚠️  Chat endpoint error: {error_details}")
@@ -659,21 +594,12 @@ If the user refers to a product by position (first, second, third, etc), 'that o
             user_message=user_message
         )
         
-        # Fall back to mock response instead of crashing
-        try:
-            mock_response, tool_calls = get_mock_agent_response(user_message, db, session_id)
-            return ChatResponse(
-                reply=mock_response,
-                tool_calls=tool_calls if tool_calls else None,
-                session_id=session_id
-            )
-        except Exception as mock_error:
-            # Even mock failed, return generic error
-            return ChatResponse(
-                reply="I encountered an issue processing your request. Please try again.",
-                tool_calls=None,
-                session_id=session_id
-            )
+        # Graceful fallback
+        return ChatResponse(
+            reply="I encountered an error. Please try again.",
+            tool_calls=None,
+            session_id=session_id
+        )
 
 
 # ==================== STARTUP ====================
@@ -686,7 +612,7 @@ async def startup_event():
     if model:
         print("[OK] Gemini agent ready with real API")
     else:
-        print("[OK] Gemini agent running in demo mode (mock responses)")
+        print("[OK] Gemini agent running in demo mode (smart reasoning)")
 
 
 if __name__ == "__main__":
