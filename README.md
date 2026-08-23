@@ -1,6 +1,6 @@
-# Razorpay Agent Catalog - Hackathon Backend
+# Razorpay Agent Catalog - Full Stack Application
 
-An "Agent-Readable Catalog" backend where a Gemini-powered AI agent can search products, reason about purchases, and execute real (test-mode) Razorpay transactions — with every money-touching action explainable, bounded in code, and fully logged.
+A complete full-stack hackathon project for Razorpay's "AI Growth & Agentic Commerce" track. An AI shopping agent (powered by Gemini) that talks to customers, searches products, recommends items, and completes real purchases using Razorpay's test-mode APIs — with every action explainable, bounded to real stock/price checks, and logged in a visible audit trail.
 
 ## Architecture
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './OrdersPage.css';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = 'http://localhost:8001';
 
 export function OrdersPage() {
   const [orders, setOrders] = useState([]);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './UserSummary.css';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = 'http://localhost:8001';
 
 export function UserSummary() {
   const [stats, setStats] = useState({

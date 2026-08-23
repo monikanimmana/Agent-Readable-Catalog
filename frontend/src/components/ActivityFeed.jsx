@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './ActivityFeed.css';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = 'http://localhost:8001';
 
 export function ActivityFeed() {
   const [activities, setActivities] = useState([]);
