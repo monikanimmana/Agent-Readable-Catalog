@@ -8,9 +8,21 @@ const API_BASE = 'http://localhost:8001';
 // Log to console to verify component is loaded
 console.log('ChatWindow component loaded, API_BASE:', API_BASE);
 
+// Generate or get session ID for conversation tracking
+function getOrCreateSessionId() {
+  const storageKey = 'razorpay_session_id';
+  let sessionId = localStorage.getItem(storageKey);
+  if (!sessionId) {
+    sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    localStorage.setItem(storageKey, sessionId);
+  }
+  return sessionId;
+}
+
 export function ChatWindow() {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [sessionId] = useState(() => getOrCreateSessionId());
   const messagesEndRef = useRef(null);
 
   // Scroll to bottom
@@ -50,13 +62,14 @@ export function ChatWindow() {
     setIsLoading(true);
 
     try {
-      // Call backend chat endpoint
+      // Call backend chat endpoint with session ID
       const response = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: userMessage,
-          budget: null  // Could be extracted from message later
+          budget: null,  // Could be extracted from message later
+          session_id: sessionId  // Send session ID for context tracking
         })
       });
 

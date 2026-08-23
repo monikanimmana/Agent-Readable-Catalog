@@ -47,6 +47,17 @@ class AuditLog(Base):
     user_message = Column(String, nullable=True)  # The user's original intent
 
 
+class ConversationContext(Base):
+    """Store conversation context for resolving references like 'second', 'that one', etc."""
+    __tablename__ = "conversation_contexts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String, unique=True, index=True)  # Client session identifier
+    last_shown_products = Column(JSON)  # List of products with indices: [{"index": 1, "id": 1, "name": "...", "price": ...}, ...]
+    last_search_query = Column(String, nullable=True)  # What query returned these products
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 def init_db():
     """Initialize the database."""
     Base.metadata.create_all(bind=engine)

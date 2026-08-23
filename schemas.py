@@ -73,6 +73,7 @@ class ChatRequest(BaseModel):
     """Chat/agent request."""
     message: str
     budget: Optional[float] = None  # Optional budget constraint in INR
+    session_id: Optional[str] = None  # Client session identifier for context tracking
 
 
 class ChatResponse(BaseModel):
@@ -80,3 +81,4 @@ class ChatResponse(BaseModel):
     reply: str
     audit_entry: Optional[Dict[str, Any]] = None
     tool_calls: Optional[List[str]] = None
+    session_id: Optional[str] = None  # Session ID for the client to track
