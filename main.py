@@ -13,10 +13,6 @@ from schemas import ChatRequest, ChatResponse
 from search import search_products as db_search_products, check_product_stock, get_product_price
 from audit import log_action, get_audit_logs
 from razorpay_service import RazorpayGuardedClient, get_razorpay_client
-from context_manager import (
-    generate_session_id, get_or_create_session, update_shown_products,
-    resolve_product_reference, get_last_shown_products, build_context_for_prompt
-)
 
 # Load environment variables
 load_dotenv()
@@ -544,27 +540,79 @@ async def get_audit_log(
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     """
-    Chat with the AI agent using reasoning-based intent detection and context.
+    Chat endpoint with full conversation history sent to Gemini every time.
     
-    NEW APPROACH: Every message goes through intelligent reasoning (not keyword gatekeeping).
-    The agent reasons about:
-    1. Product references (second, that one, it)
-    2. Simple confirmations (yes, ok, buy)
-    3. Search/browse intent
-    4. Conversational messages
-    5. Clarification when genuinely unclear
-    
-    This mimics how Gemini works: full context, single reasoning path.
+    This is the KEY FIX:
+    1. Full message history is sent (not just latest message)
+    2. Last shown products injected into system prompt
+    3. Gemini makes the intent decision (not keyword gatekeeping)
+    4. Session state kept in-memory (conversation + products shown)
     """
-    user_message = request.message
-    budget = request.budget
+    from context_manager import (
+        get_session, add_message, get_conversation_history, 
+        update_last_shown_products, get_last_shown_products
+    )
     
-    # Get or create session for this conversation
-    session_id = get_or_create_session(db, request.session_id)
+    user_message = request.message
+    session_id = request.session_id or f"session_{int(__import__('time').time())}"
+    
+    # Get session (in-memory)
+    session = get_session(session_id)
+    
+    # Add user message to history
+    add_message(session_id, "user", user_message)
     
     try:
-        # NEW: Use smart agent reasoning for every message
-        # (removes the gatekeeping keyword-matching layer)
+        # Build system prompt WITH current context injected
+        system_prompt = _build_system_prompt_with_context(get_last_shown_products(session_id))
+        
+        # Get FULL conversation history (not just latest message)
+        conversation_history = get_conversation_history(session_id)
+        
+        # If Gemini API is available, use it
+        if model:
+            response = model.generate_content(
+                conversation_history,
+                tools=TOOL_DEFINITIONS,
+                system_instruction=system_prompt,
+            )
+            
+            # Extract response text
+            reply_text = ""
+            tool_calls_made = []
+            
+            if response.content.parts:
+                for part in response.content.parts:
+                    if hasattr(part, 'text'):
+                        reply_text = part.text
+                    elif hasattr(part, 'function_call'):
+                        tool_call = part.function_call
+                        tool_name = tool_call.name
+                        tool_args = {arg.name: arg.value for arg in tool_call.args}
+                        tool_calls_made.append(tool_name)
+                        
+                        # Handle search_products - update last shown products
+                        if tool_name == "search_products":
+                            products = db_search_products(
+                                db,
+                                query=tool_args.get("query", ""),
+                                max_price=tool_args.get("max_price"),
+                                size=tool_args.get("size")
+                            )
+                            update_last_shown_products(session_id, products)
+                            log_action(db, "search", "success", tool_args, {"results_count": len(products)}, user_message)
+            
+            # Add AI response to history for next message
+            if reply_text:
+                add_message(session_id, "assistant", reply_text)
+            
+            return ChatResponse(
+                reply=reply_text or "I'm not sure how to respond to that.",
+                tool_calls=tool_calls_made if tool_calls_made else None,
+                session_id=session_id
+            )
+        
+        # Fallback: Use smart reasoning if no Gemini API
         from smart_agent import reason_about_intent
         
         response_text, action_data, tool_calls = reason_about_intent(
@@ -573,6 +621,9 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
             session_id=session_id,
         )
         
+        # Add to history
+        add_message(session_id, "assistant", response_text)
+        
         return ChatResponse(
             reply=response_text,
             tool_calls=tool_calls if tool_calls else None,
@@ -580,26 +631,51 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
         )
         
     except Exception as e:
-        # Log error but still return something usable
         import traceback
-        error_details = traceback.format_exc()
-        print(f"⚠️  Chat endpoint error: {error_details}")
+        print(f"⚠️  Chat error: {traceback.format_exc()}")
         
         log_action(
             db=db,
             action_type="chat_error",
             status="failed",
-            input_data={"message": user_message, "budget": budget},
+            input_data={"message": user_message},
             output_data={"error": str(e)},
             user_message=user_message
         )
         
-        # Graceful fallback
         return ChatResponse(
             reply="I encountered an error. Please try again.",
             tool_calls=None,
             session_id=session_id
         )
+
+
+def _build_system_prompt_with_context(last_shown_products: List[Dict]) -> str:
+    """Build system prompt WITH current context injected."""
+    products_context = ""
+    if last_shown_products:
+        products_context = "The user was just shown these products:\n"
+        for p in last_shown_products:
+            stock_status = "In stock" if p.get("stock", 0) > 0 else "Out of stock"
+            products_context += f"{p['index']}. {p['name']} - ₹{p['price']} ({stock_status})\n"
+        products_context += "\nIf the user refers to an item by position (first, second, that one, last) or confirms with 'yes', resolve it against this list.\n"
+    
+    return f"""You are a shopping assistant agent. You help users find and purchase products.
+
+You have access to these tools:
+- search_products: Search catalog by keyword
+- check_stock: Check if product is available
+- get_price: Get product price  
+- initiate_purchase: Create order
+
+IMPORTANT INSTRUCTIONS:
+1. Only call search_products when user asks about products, prices, or shopping
+2. For greetings, unclear messages, or off-topic questions, respond conversationally WITHOUT calling tools
+3. If the user's message has a typo or is vague, interpret their likely intent
+4. Don't force product searches - only search when user asks for it
+5. Be natural and helpful, not robotic
+
+{products_context}"""
 
 
 # ==================== STARTUP ====================

@@ -1,11 +1,6 @@
 """
 Smart agent that mimics Gemini's reasoning - sends every message through contextual reasoning.
-Instead of keyword-matching gatekeeping, this reasons about intent based on:
-1. The user's actual message
-2. The conversation history (products shown, last actions)
-3. Contextual understanding (like ChatGPT does)
-
-This removes the brittle keyword-matching layer and lets actual reasoning happen.
+Uses default AI responses for natural, context-aware interactions without real API.
 """
 
 from sqlalchemy.orm import Session
@@ -14,6 +9,13 @@ from database import Product
 from context_manager import get_last_shown_products, resolve_product_reference, update_shown_products
 from search import search_products as db_search_products
 from audit import log_action
+from default_ai_responses import (
+    generate_search_response,
+    generate_purchase_response,
+    generate_error_response,
+    get_product_detail_response,
+    get_default_response,
+)
 
 
 def reason_about_intent(
