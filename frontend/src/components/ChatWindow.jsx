@@ -15,17 +15,27 @@ export function ChatWindow() {
 
   // Scroll to bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
+    }
   }, [messages]);
 
   // Initial greeting
   useEffect(() => {
-    setMessages([{
+    const greeting = {
       id: 'greeting',
       text: "👋 Hi! I'm your shopping agent. I can help you find products, check prices, and complete purchases. What are you looking for today?",
       isUser: false,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    }]);
+    };
+    setMessages([greeting]);
+    
+    // Ensure scroll to top on initial load
+    setTimeout(() => {
+      if (messagesEndRef.current) {
+        messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
+      }
+    }, 0);
   }, []);
 
   const handleSendMessage = async (userMessage) => {

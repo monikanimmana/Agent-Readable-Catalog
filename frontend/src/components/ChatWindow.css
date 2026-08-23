@@ -10,15 +10,17 @@
 .messages-container {
   flex: 1;
   overflow-y: auto;
-  padding: var(--spacing-md) var(--spacing-sm);
+  padding: var(--spacing-md) var(--spacing-md);
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs);
+  gap: var(--spacing-md);
   background-color: var(--bg-page);
+  align-items: flex-start;
+  justify-content: flex-start;
 }
 
 .messages-container::-webkit-scrollbar {
-  width: 4px;
+  width: 6px;
 }
 
 .messages-container::-webkit-scrollbar-track {
@@ -27,7 +29,7 @@
 
 .messages-container::-webkit-scrollbar-thumb {
   background: var(--border);
-  border-radius: 2px;
+  border-radius: 3px;
 }
 
 .messages-container::-webkit-scrollbar-thumb:hover {
