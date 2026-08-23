@@ -25,18 +25,42 @@ def search_products(
     Returns:
         List of matching products
     """
+    from sqlalchemy import or_
+    
     # Start with all products
     search_query = db.query(Product)
     
     # Keyword search on name and description (case-insensitive)
     if query and query.strip():
         keywords = query.strip().lower().split()
+        
+        # For each keyword, search with OR logic within that keyword
+        # But AND logic between keywords (all keywords must match)
         for keyword in keywords:
-            search_query = search_query.filter(
-                (Product.name.ilike(f"%{keyword}%")) |
-                (Product.description.ilike(f"%{keyword}%")) |
-                (Product.category.ilike(f"%{keyword}%"))
+            # Create variations: singular and plural
+            variations = [keyword]
+            if keyword.endswith('s') and len(keyword) > 1:
+                variations.append(keyword[:-1])  # singular
+            elif not keyword.endswith('s'):
+                variations.append(keyword + 's')  # plural
+            
+            # Search using OR for all variations of this keyword
+            keyword_filter = or_(
+                Product.name.ilike(f"%{variations[0]}%"),
+                Product.description.ilike(f"%{variations[0]}%"),
+                Product.category.ilike(f"%{variations[0]}%")
             )
+            
+            # Add other variations with OR
+            for var in variations[1:]:
+                keyword_filter = or_(
+                    keyword_filter,
+                    Product.name.ilike(f"%{var}%"),
+                    Product.description.ilike(f"%{var}%"),
+                    Product.category.ilike(f"%{var}%")
+                )
+            
+            search_query = search_query.filter(keyword_filter)
     
     # Price filter
     if max_price is not None:

@@ -81,7 +81,11 @@ def get_mock_agent_response(user_message: str, db: Session) -> tuple[str, list]:
     is_off_topic = any(keyword in user_lower for keyword in off_topic_keywords)
     
     # ===== HANDLE PURCHASES =====
-    purchase_keywords = ["buy", "purchase", "checkout", "order", "add to cart", "want to buy", "i'll take"]
+    purchase_keywords = [
+        "buy", "purchase", "checkout", "order", "add to cart", "want to buy", "i'll take",
+        "first one", "that one", "it", "take it", "get it", "ill buy", "let me buy",
+        "give me", "can i buy", "i want that", "i'll buy", "send me", "add it"
+    ]
     is_purchase = any(keyword in user_lower for keyword in purchase_keywords)
     
     if is_purchase:
@@ -206,10 +210,10 @@ def get_mock_agent_response(user_message: str, db: Session) -> tuple[str, list]:
     )
     
     return (
-        "I'm not sure. Could you tell me:\n"
-        "- 'Show me [product]' to search\n"
-        "- 'I want to buy' to purchase\n"
-        "- Or ask me anything about the app?\n\n"
+        "I can help! Try one of these:\n\n"
+        "🔍 **Search**: 'Show me shirts' or 'Find blue shoes'\n"
+        "🛒 **Buy**: 'I want to buy the first one' or 'Buy that shirt'\n"
+        "❓ **Ask**: 'How much is the headphones?'\n\n"
         "What would you like?",
         []
     )
