@@ -82,11 +82,13 @@ pip install -r requirements.txt
 # Copy example env file
 cp .env.example .env
 
-# Edit .env and add your API keys
+# Edit .env and add your API keys (optional for demo mode)
 # RAZORPAY_KEY_ID=rzp_test_YOUR_KEY_ID
 # RAZORPAY_KEY_SECRET=rzp_test_YOUR_KEY_SECRET
 # GEMINI_API_KEY=your_gemini_api_key
 ```
+
+**Note:** The application now runs in **demo mode** without a real Gemini API key. It uses realistic mock responses that demonstrate the full functionality. To enable real Gemini AI reasoning, add a valid API key to the `.env` file.
 
 ### 4. Seed Database
 
@@ -105,25 +107,30 @@ Output:
 python main.py
 ```
 
-The backend will start at `http://localhost:8000`
+The backend will start at `http://localhost:8001`
 
-Access interactive docs: `http://localhost:8000/docs`
+Access interactive docs: `http://localhost:8001/docs`
+
+**Status Indicators:**
+- ✅ Demo Mode (no real Gemini API): Full chat functionality with mock responses
+- 🤖 Real Mode (Gemini API key configured): AI reasoning with real agent
+
 
 ## API Endpoints
 
 ### Health Check
 ```bash
-GET /health
+GET http://localhost:8001/health
 ```
 
 ### Search Products (Direct)
 ```bash
-GET /search?query=shirt&max_price=1000&size=M
+GET http://localhost:8001/search?query=shirt&max_price=1000&size=M
 ```
 
 ### Chat with Agent
 ```bash
-POST /chat
+POST http://localhost:8001/chat
 Content-Type: application/json
 
 {
@@ -134,19 +141,42 @@ Content-Type: application/json
 
 ### Get Audit Trail
 ```bash
-GET /audit-log
-GET /audit-log?action_type=search&status=success&limit=50
+GET http://localhost:8001/audit-log
+GET http://localhost:8001/audit-log?action_type=search&status=success&limit=50
 ```
 
 ## Demo Scenarios
 
+### Quick Test (Demo Mode - No API Keys Required!)
+
+Just start the server and try:
+
+```bash
+curl -X POST "http://localhost:8001/chat" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Find me a blue shirt",
+    "budget": 3000
+  }'
+```
+
+Response (with mock agent):
+```json
+{
+  "reply": "I found 3 items matching 'blue':\n\n1. **Classic Blue Shirt** - ₹1,299\nSize: M, L, XL | In Stock\n\n...",
+  "tool_calls": ["search_products"]
+}
+```
+
+All actions are logged to the audit trail even in demo mode!
+
 ### Scenario 1: Successful Purchase
 
 ```bash
-curl -X POST "http://localhost:8000/chat" \
+curl -X POST "http://localhost:8001/chat" \
   -H "Content-Type: application/json" \
   -d '{
-    "message": "I want a blue wireless headphone",
+    "message": "I want to buy a blue wireless headphone",
     "budget": 4500
   }'
 ```
@@ -161,7 +191,7 @@ Expected flow:
 ### Scenario 2: Out of Stock
 
 ```bash
-curl -X POST "http://localhost:8000/chat" \
+curl -X POST "http://localhost:8001/chat" \
   -H "Content-Type: application/json" \
   -d '{
     "message": "I want running shoes"
@@ -178,7 +208,7 @@ Expected flow:
 ### Scenario 3: Budget Exceeded
 
 ```bash
-curl -X POST "http://localhost:8000/chat" \
+curl -X POST "http://localhost:8001/chat" \
   -H "Content-Type: application/json" \
   -d '{
     "message": "I want a smart watch",
@@ -322,6 +352,55 @@ The database comes pre-seeded with 18 realistic products:
 16. Mechanical Keyboard RGB (₹7499, stock: 3)
 17. Sunscreen SPF 50+ (₹599, stock: 55)
 18. Bluetooth Speaker (₹2299, stock: 9)
+
+## Frontend Setup
+
+The application includes a full-featured React frontend with a dark theme UI.
+
+### 1. Install Dependencies
+
+```bash
+cd frontend
+npm install
+```
+
+### 2. Start Frontend Dev Server
+
+```bash
+npm run dev
+```
+
+The frontend will start at `http://localhost:5173` (or `5174` if port 5173 is in use).
+
+### 3. Open in Browser
+
+Visit: `http://localhost:5173`
+
+The frontend will automatically connect to the backend at `http://localhost:8001`.
+
+### Frontend Features
+
+- **Chat Interface** - Real-time chat with the AI agent
+- **Activity Feed** - Live audit trail of all actions
+- **User Summary** - Total orders and spending metrics
+- **Orders Page** - View purchase history
+- **Dark Theme** - OLED-friendly dark UI with teal accents
+
+### Running Both Servers
+
+```bash
+# Terminal 1: Backend
+cd razorpay-agent-catalog
+python main.py
+
+# Terminal 2: Frontend
+cd razorpay-agent-catalog/frontend
+npm run dev
+```
+
+Both servers will run simultaneously:
+- Backend: `http://localhost:8001`
+- Frontend: `http://localhost:5173`
 
 ## Troubleshooting
 
