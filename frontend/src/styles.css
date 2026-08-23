@@ -1,0 +1,184 @@
+/* Dark theme color palette */
+:root {
+  --bg-page: #0A0A0F;
+  --surface: #14141C;
+  --surface-elevated: #1C1C26;
+  --border: #2A2A38;
+  --primary: #2DD4BF;
+  --primary-hover: #5EEAD4;
+  --success: #3ECF8E;
+  --danger: #F76C6C;
+  --text-primary: #F2F2F7;
+  --text-secondary: #9C9CAE;
+  --text-muted: #6B6B7B;
+
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 20px;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-full: 50%;
+
+  --glow: 0 0 20px rgba(45, 212, 191, 0.3);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', 'Sora', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+h1 {
+  font-size: 32px;
+  font-weight: 600;
+}
+
+h2 {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+h3 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+body, p, span, a {
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.metric {
+  font-size: 28px;
+  font-weight: 500;
+}
+
+/* Buttons */
+.btn {
+  padding: var(--spacing-lg) calc(var(--spacing-lg) * 1.5);
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.btn-primary {
+  background-color: var(--primary);
+  color: var(--bg-page);
+}
+
+.btn-primary:hover {
+  background-color: var(--primary-hover);
+}
+
+.btn-secondary {
+  background-color: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.btn-secondary:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.btn-success {
+  background-color: var(--success);
+  color: var(--bg-page);
+}
+
+.btn-danger {
+  background-color: var(--danger);
+  color: white;
+}
+
+/* Cards */
+.card {
+  background-color: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-xl);
+}
+
+/* Badge */
+.badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.badge-success {
+  background-color: var(--success);
+  color: var(--bg-page);
+}
+
+.badge-danger {
+  background-color: var(--danger);
+  color: white;
+}
+
+.badge-warning {
+  background-color: #F76C6C;
+  color: white;
+}
+
+/* Input */
+input, textarea {
+  background-color: var(--surface-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: var(--spacing-lg);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+input:focus, textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 12px rgba(45, 212, 191, 0.2);
+}
+
+::placeholder {
+  color: var(--text-muted);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}

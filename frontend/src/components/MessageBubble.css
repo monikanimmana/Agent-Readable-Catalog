@@ -1,0 +1,124 @@
+.message-wrapper {
+  display: flex;
+  margin-bottom: var(--spacing-xl);
+  gap: var(--spacing-md);
+}
+
+.message-wrapper.user {
+  justify-content: flex-end;
+}
+
+.message-wrapper.ai {
+  justify-content: flex-start;
+  align-items: flex-end;
+}
+
+.ai-avatar-container {
+  flex-shrink: 0;
+}
+
+.ai-avatar {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  box-shadow: var(--glow);
+}
+
+.message-bubble {
+  max-width: 70%;
+  padding: var(--spacing-lg);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+}
+
+.user-bubble {
+  background-color: var(--primary);
+  color: var(--bg-page);
+  border: none;
+}
+
+.ai-bubble {
+  background-color: var(--surface-elevated);
+  color: var(--text-primary);
+}
+
+.message-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.message-time {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: var(--spacing-md);
+  opacity: 0.7;
+}
+
+.products-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-lg);
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid var(--border);
+}
+
+.product-in-message {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  background-color: var(--surface);
+  border-radius: var(--radius-sm);
+}
+
+.product-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.product-info {
+  flex: 1;
+}
+
+.product-name {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.product-price {
+  margin: 2px 0 0 0;
+  font-size: 12px;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.status-bar {
+  margin-top: var(--spacing-lg);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.status-bar.success {
+  background-color: rgba(62, 207, 142, 0.1);
+  color: var(--success);
+}
+
+.status-bar.failed {
+  background-color: rgba(247, 108, 108, 0.1);
+  color: var(--danger);
+}
+
+.status-bar.pending {
+  background-color: rgba(45, 212, 191, 0.1);
+  color: var(--primary);
+}

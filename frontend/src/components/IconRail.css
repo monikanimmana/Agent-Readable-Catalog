@@ -1,0 +1,40 @@
+.icon-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-xl);
+  background-color: var(--surface);
+  border-right: 1px solid var(--border);
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  width: 80px;
+  align-items: center;
+}
+
+.rail-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  background-color: transparent;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 20px;
+  transition: all 0.2s ease;
+  color: var(--text-secondary);
+}
+
+.rail-icon:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.rail-icon.active {
+  background-color: var(--primary);
+  border-color: var(--primary);
+  color: var(--bg-page);
+  box-shadow: var(--glow);
+}
