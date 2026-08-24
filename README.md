@@ -50,6 +50,13 @@ Razorpay Popup → Payment Processing → Order Confirmation
 - **Product Search** - Full-text search capability
 
 ---
+<img width="1919" height="1038" alt="image" src="https://github.com/user-attachments/assets/cc39081f-09f0-48b7-adca-16f4f80941eb" />
+
+<img width="1917" height="1028" alt="image" src="https://github.com/user-attachments/assets/3fade68c-2391-495a-980c-61c585117073" />
+<img width="1432" height="869" alt="image" src="https://github.com/user-attachments/assets/5159ad4f-9782-4a68-8785-333a95205b9d" />
+
+
+
 
 ## 🏗️ Architecture
 
