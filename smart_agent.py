@@ -1,21 +1,25 @@
 """
-Smart agent that mimics Gemini's reasoning - sends every message through contextual reasoning.
-Uses default AI responses for natural, context-aware interactions without real API.
+Smart agent with proper booking flow: Product → Color/Size → Address → Payment → Confirmation
 """
 
 from sqlalchemy.orm import Session
 from typing import Dict, Any, Optional, List, Tuple
 from database import Product
-from context_manager import get_last_shown_products, resolve_product_reference, update_shown_products
+from context_manager import (
+    get_last_shown_products, 
+    update_last_shown_products,
+    resolve_product_reference as resolve_ref,
+    get_session,
+    set_selected_product,
+    set_product_variant,
+    set_address,
+    set_awaiting_confirmation,
+    get_selected_product,
+    get_address,
+    is_awaiting_confirmation
+)
 from search import search_products as db_search_products
 from audit import log_action
-from default_ai_responses import (
-    generate_search_response,
-    generate_purchase_response,
-    generate_error_response,
-    get_product_detail_response,
-    get_default_response,
-)
 
 
 def reason_about_intent(
@@ -24,199 +28,348 @@ def reason_about_intent(
     session_id: str,
 ) -> Tuple[str, Dict[str, Any], list]:
     """
-    Reason about what the user wants using context, NOT keyword matching.
-    
-    This is the ONE place decisions happen - replaces all the branching keyword logic.
-    
-    Returns: (response_text, action_data, tool_calls)
-    where action_data contains: {intent, product_id, query, confirmation, etc}
+    Enhanced reasoning with proper booking flow:
+    Product Selection → Color Selection → Size Selection → Address → Payment Method → Confirmation
     """
     
     user_lower = user_message.lower().strip()
-    last_products = get_last_shown_products(db, session_id)
+    last_products = get_last_shown_products(session_id)
+    selected_product = get_selected_product(session_id)
+    session = get_session(session_id)
     
-    # ===== REASONING CHAIN =====
-    # We reason through possibilities in order of likelihood given the context
+    # Get booking state
+    product_id = selected_product["id"] if selected_product else None
+    color = selected_product["color"] if selected_product else None
+    size = selected_product["size"] if selected_product else None
+    address = get_address(session_id)
+    booking_stage = session.get("booking_stage", "initial")  # initial, asking_clothing_type, asking_product, asking_color, asking_size, asking_address, asking_payment, confirmed
     
-    # 1. Is this referring to a specific product from what we just showed?
-    resolved_product = resolve_product_reference(db, session_id, user_message)
-    if resolved_product:
-        # User is referencing a product: "second", "that one", "it", "the shirt"
-        if resolved_product.stock <= 0:
-            action = {
-                "intent": "purchase_blocked_out_of_stock",
-                "product_id": resolved_product.id,
-                "product_name": resolved_product.name
+    # ===== NEW STAGE: Clothing Type Selection =====
+    # After we show "1. Casual 2. Formal 3. Party", user picks one
+    if booking_stage == "asking_clothing_type":
+        # Get the clothing type and subtypes from the stored action
+        clothing_type = session.get("current_clothing_type")
+        subtypes = session.get("current_subtypes", [])
+        
+        if clothing_type and subtypes:
+            # Check if user selected a valid subtype
+            user_input_lower = user_lower
+            selected_subtype = None
+            
+            # Try to match by name or number
+            for idx, subtype in enumerate(subtypes, 1):
+                if user_input_lower == str(idx) or user_input_lower == subtype.lower():
+                    selected_subtype = subtype
+                    break
+            
+            if selected_subtype:
+                # Filter products of this type by the selected subtype
+                products = db.query(Product).filter(
+                    Product.category.ilike(f"%{clothing_type}%"),
+                    Product.variants.ilike(f"%{selected_subtype}%")
+                ).all()
+                
+                if not products:
+                    # If exact variant match fails, just show all of this type
+                    products = db.query(Product).filter(
+                        Product.category.ilike(f"%{clothing_type}%")
+                    ).all()
+                
+                if products:
+                    update_last_shown_products(session_id, products)
+                    session["booking_stage"] = "asking_product"  # Next: ask which product
+                    
+                    response = f"📦 Showing {len(products)} **{selected_subtype}** {clothing_type}(s):\n\n"
+                    for idx, product in enumerate(products, 1):
+                        stock_status = "✅" if product.stock > 0 else "❌"
+                        response += f"{idx}. **{product.name}** - ₹{product.price} {stock_status}\n"
+                    
+                    response += "\nWhich one would you like? (Say 'first', 'second', '1', '2', or the product name)"
+                    
+                    action = {"intent": "subtype_selected", "category": clothing_type, "subtype": selected_subtype}
+                    log_action(db, "chat", "success", {"message": user_message, "intent": "subtype_selected"},
+                              {"subtype": selected_subtype}, user_message=user_message)
+                    return response, action, []
+            
+            # If no valid selection, re-show the menu
+            response = f"👕 **{clothing_type.upper()}** Types:\n\n"
+            for i, subtype in enumerate(subtypes, 1):
+                response += f"{i}. {subtype}\n"
+            response += "\nWhich type would you prefer? (Say '1', '2', etc. or the name)"
+            action = {"intent": "asking_clothing_type"}
+            return response, action, []
+    
+    # ===== NEW STAGE: Product Selection from filtered list =====
+    # After showing filtered products, user picks one
+    if booking_stage == "asking_product" and last_products:
+        # Try to resolve product reference (first, second, last, number, name)
+        resolved_product_dict = resolve_ref(user_message, last_products)
+        
+        if resolved_product_dict:
+            resolved_product = db.query(Product).filter(Product.id == resolved_product_dict["id"]).first()
+            if resolved_product:
+                set_selected_product(session_id, resolved_product.id, resolved_product.name)
+                session["booking_stage"] = "asking_color"  # Start asking for color
+                
+                # Show product details and ask for color
+                response = f"✨ **{resolved_product.name}**\n"
+                response += f"💰 Price: ₹{resolved_product.price}\n"
+                response += f"📦 Stock: {resolved_product.stock} available\n\n"
+                
+                if resolved_product.variants:
+                    variants = resolved_product.variants
+                    color_options = variants.get("colors", [])
+                    
+                    if color_options:
+                        response += f"🎨 Available Colors:\n"
+                        for color_opt in color_options:
+                            response += f"  • {color_opt}\n"
+                        response += f"\nPlease share your preferred **color**!"
+                    else:
+                        response += "This product is ready to book!\n"
+                        session["booking_stage"] = "asking_address"
+                        response += "Please provide your **delivery address**"
+                
+                action = {"intent": "product_selected", "product_id": resolved_product.id}
+                log_action(db, "chat", "success", {"message": user_message, "intent": "product_selected"},
+                          {"product_id": resolved_product.id}, user_message=user_message)
+                return response, action, []
+    
+    # ===== BOOKING FLOW STAGES =====
+    
+    # STAGE 1: Color Selection (after product selected)
+    if booking_stage == "asking_color" and selected_product:
+        color_keywords = ["floral", "white", "black", "blue", "red", "green", "pink", "yellow", "purple", "gold", "silver", "maroon", "navy", "brown", "grey", "beige", "cream", "light", "dark", "solid"]
+        
+        if any(keyword in user_lower for keyword in color_keywords):
+            set_product_variant(session_id, color=user_message)
+            session["booking_stage"] = "asking_size"
+            
+            product = db.query(Product).filter(Product.id == product_id).first()
+            response = f"Great! Color: **{user_message}**\n\n"
+            response += "Now, what **size** would you like?\n"
+            
+            if product and product.variants:
+                sizes = product.variants.get("sizes", [])
+                if sizes:
+                    response += "\n📏 Available Sizes:\n"
+                    for size_opt in sizes:
+                        response += f"  • {size_opt}\n"
+            
+            action = {"intent": "color_selected", "color": user_message}
+            log_action(db, "chat", "success", {"message": user_message, "intent": "color_selected"},
+                      {"color": user_message}, user_message=user_message)
+            return response, action, []
+        else:
+            response = "Sorry, I didn't catch that color. Please choose from available colors:\n"
+            product = db.query(Product).filter(Product.id == product_id).first()
+            if product and product.variants:
+                colors = product.variants.get("colors", [])
+                for color_opt in colors:
+                    response += f"  • {color_opt}\n"
+            action = {"intent": "asking_color"}
+            return response, action, []
+    
+    # STAGE 2: Size Selection (after color selected)
+    if booking_stage == "asking_size" and selected_product and color:
+        size_keywords = ["xs", "s", "m", "l", "xl", "xxl", "one size", "26", "28", "30", "32", "34", "36", "500ml", "750ml", "1l"]
+        
+        if any(keyword in user_lower for keyword in size_keywords):
+            set_product_variant(session_id, size=user_message)
+            session["booking_stage"] = "confirmed"  # Skip address/payment, go straight to confirmation
+            
+            product = db.query(Product).filter(Product.id == product_id).first()
+            
+            # Store order details in session for Razorpay
+            session["pending_order"] = {
+                "product_id": product_id,
+                "product_name": product.name,
+                "price": product.price,
+                "color": color,
+                "size": user_message
             }
-            response = f"Sorry, **{resolved_product.name}** is currently out of stock. Would you like to search for something else?"
-            log_action(
-                db=db,
-                action_type="purchase_attempt",
-                status="blocked",
-                input_data={"product_id": resolved_product.id, "reason": "out_of_stock"},
-                output_data={"message": response},
-                user_message=user_message
-            )
+            
+            response = (f"✨ **Order Summary**\n\n"
+                       f"📦 Product: **{product.name}**\n"
+                       f"💰 Price: ₹{product.price}\n"
+                       f"🎨 Color: **{color}**\n"
+                       f"📏 Size: **{user_message}**\n\n"
+                       f"💳 Proceeding to Razorpay payment...\n"
+                       f"(Checkout popup will open)")
+            
+            action = {
+                "intent": "order_ready_for_payment",
+                "product_id": product_id,
+                "product_name": product.name,
+                "price": product.price
+            }
+            log_action(db, "chat", "success", {"message": user_message, "intent": "order_ready"},
+                      {"product_id": product_id, "color": color, "size": user_message}, user_message=user_message)
+            return response, action, ["initiate_purchase"]
+        else:
+            response = "Sorry, I didn't catch that size. Please choose from available sizes:\n"
+            product = db.query(Product).filter(Product.id == product_id).first()
+            if product and product.variants:
+                sizes = product.variants.get("sizes", [])
+                for size_opt in sizes:
+                    response += f"  • {size_opt}\n"
+            action = {"intent": "asking_size"}
+            return response, action, []
+    
+    # ===== PRODUCT SELECTION FLOW =====
+    
+    # CLOTHING TYPE QUERIES - CHECK FIRST BEFORE GENERIC "SHOW"
+    # IMPORTANT: Check t-shirt BEFORE shirt to avoid substring matching
+    clothing_searches = {
+        "t-shirt": ["Plain", "Graphic"],
+        "shirt": ["Plain", "Party", "Formal"],
+        "saree": ["Kachipuram", "Plain", "Party Wear", "Traditional"],
+        "tops": ["Short Sleeve", "Long Sleeve", "Chikankari", "Traditional", "Party Wear"],
+        "dress": ["Casual", "Formal", "Party"],
+        "jeans": ["Slim Fit", "Skinny"],
+    }
+    
+    for clothing_type, subtypes in clothing_searches.items():
+        # Use word boundary matching to avoid substring issues
+        # e.g., "t-shirt" should match "t-shirt" but not be matched by "shirt"
+        if f" {clothing_type}" in f" {user_lower}" or user_lower.startswith(clothing_type) or user_lower.endswith(clothing_type):
+            products = db.query(Product).filter(
+                Product.category.ilike(f"%{clothing_type}%")
+            ).all()
+            
+            if not products:
+                response = f"Sorry, no {clothing_type}s available right now."
+                action = {"intent": "search", "query": clothing_type, "results": 0}
+                log_action(db, "search", "success", {"query": clothing_type}, {"results_count": 0}, user_message=user_message)
+                return response, action, []
+            
+            update_last_shown_products(session_id, products)
+            session["booking_stage"] = "asking_clothing_type"  # CHANGED: waiting for type selection
+            session["current_clothing_type"] = clothing_type  # Store for next stage
+            session["current_subtypes"] = subtypes  # Store subtypes
+            
+            response = f"👕 **{clothing_type.upper()}** Types:\n\n"
+            for i, subtype in enumerate(subtypes, 1):
+                response += f"{i}. {subtype}\n"
+            response += "\nWhich type would you prefer? (Say '1', '2', etc. or the name)"
+            
+            action = {"intent": "asking_clothing_type", "category": clothing_type, "subtypes": subtypes}
+            log_action(db, "search", "success", {"query": clothing_type}, {"results_count": len(products)}, user_message=user_message)
+            return response, action, ["search_products"]
+    
+    # SHOW ALL / SHOW PRODUCTS (only if no specific clothing type matched)
+    show_keywords = ["show all", "show", "display", "list", "browse"]
+    if any(keyword in user_lower for keyword in show_keywords):
+        products = db.query(Product).limit(18).all()
+        if not products:
+            response = "No products available."
+            action = {"intent": "search", "query": "browse_all", "results": 0}
+            log_action(db, "search", "success", {"query": "browse_all"}, {"results_count": 0}, user_message=user_message)
             return response, action, []
         
-        # Product is in stock - buy it
-        action = {
-            "intent": "purchase_product_by_reference",
-            "product_id": resolved_product.id,
-            "product_name": resolved_product.name,
-            "quantity": 1
-        }
-        response = f"Great! Order created for **{resolved_product.name}** (₹{resolved_product.price}). Status: Pending payment."
+        update_last_shown_products(session_id, products)
+        response = f"📦 Showing {len(products)} items:\n\n"
+        for idx, product in enumerate(products, 1):
+            stock_status = "✅" if product.stock > 0 else "❌"
+            response += f"{idx}. **{product.name}** - ₹{product.price} {stock_status}\n"
         
-        log_action(
-            db=db,
-            action_type="purchase_attempt",
-            status="success",
-            input_data={"product_id": resolved_product.id, "quantity": 1},
-            output_data={"order_id": "order_test_123", "status": "pending"},
-            razorpay_order_id="order_test_123",
-            user_message=user_message
-        )
-        return response, action, ["check_stock", "initiate_purchase"]
+        response += "\nWhich one interests you? (Say 'first', 'second', or the product name)"
+        action = {"intent": "show_all", "results_count": len(products)}
+        log_action(db, "search", "success", {"query": "browse_all"}, {"results_count": len(products)}, user_message=user_message)
+        return response, action, ["search_products"]
     
-    # 2. Simple affirmations (yes/ok) when products shown?
-    # If user just says "yes", "ok", "buy", "confirm" and we showed products, assume buy first
-    simple_affirmations = ["yes", "ok", "okay", "sure", "go", "proceed", "confirm", "buy"]
-    if user_lower in simple_affirmations and last_products:
-        first_product_info = last_products[0]
-        first_product = db.query(Product).filter(Product.id == first_product_info["id"]).first()
-        
-        if first_product and first_product.stock > 0:
-            action = {
-                "intent": "purchase_by_affirmation",
-                "product_id": first_product.id,
-                "product_name": first_product.name,
-                "quantity": 1
-            }
-            response = f"Great! Order created for **{first_product.name}** (₹{first_product.price}). Status: Pending payment."
+    # PRODUCT SELECTION (First, Second, Last, or by number)
+    resolved_product_dict = resolve_ref(user_message, last_products)
+    if resolved_product_dict:
+        resolved_product = db.query(Product).filter(Product.id == resolved_product_dict["id"]).first()
+        if resolved_product:
+            set_selected_product(session_id, resolved_product.id, resolved_product.name)
+            session["booking_stage"] = "asking_color"  # Start asking for color
             
-            log_action(
-                db=db,
-                action_type="purchase_attempt",
-                status="success",
-                input_data={"product_id": first_product.id, "quantity": 1},
-                output_data={"order_id": "order_test_123", "status": "pending"},
-                razorpay_order_id="order_test_123",
-                user_message=user_message
-            )
-            return response, action, ["check_stock", "initiate_purchase"]
+            # Show product details and ask for color
+            response = f"✨ **{resolved_product.name}**\n"
+            response += f"💰 Price: ₹{resolved_product.price}\n"
+            response += f"📦 Stock: {resolved_product.stock} available\n\n"
+            
+            if resolved_product.variants:
+                variants = resolved_product.variants
+                color_options = variants.get("colors", [])
+                
+                if color_options:
+                    response += f"🎨 Available Colors:\n"
+                    for color_opt in color_options:
+                        response += f"  • {color_opt}\n"
+                    response += f"\nPlease share your preferred **color**!"
+                else:
+                    response += "This product is ready to book!\n"
+                    session["booking_stage"] = "asking_address"
+                    response += "Please provide your **delivery address**"
+            
+            action = {"intent": "product_selected", "product_id": resolved_product.id}
+            log_action(db, "chat", "success", {"message": user_message, "intent": "product_selected"},
+                      {"product_id": resolved_product.id}, user_message=user_message)
+            return response, action, []
     
-    # 3. Is this asking to search/browse for products?
-    # Look for intent patterns: "show", "find", "search", "what", specific product types
-    search_patterns = [
-        "show", "find", "search", "what", "have", "looking for", "want",
-        "shirt", "shoe", "headphone", "watch", "bottle", "tea", "mat",
-        "cable", "keyboard", "speaker", "bag", "plant", "toothbrush",
-        "products", "items", "available", "browse"
-    ]
+    # SEARCH PRODUCTS
+    search_patterns = ["find", "search", "show", "looking", "want", "products", "items"]
     
-    # Even with typos, check if any search pattern is in the message
-    message_words = user_message.lower().split()
-    has_search_intent = any(pattern in user_lower for pattern in search_patterns)
-    
-    if has_search_intent:
-        # Extract what they're searching for
-        # Remove common words to get the query
-        stop_words = {"what", "show", "find", "me", "i", "want", "can", "you", "please",
-                      "looking", "for", "search", "a", "the", "do", "have", "is", "are",
-                      "any", "some", "all", "get", "give", "tell", "see", "ll", "peoducts",
-                      "shiw", "colpour", "image", "which", "browse"}
+    if any(pattern in user_lower for pattern in search_patterns):
+        stop_words = {"what", "show", "find", "me", "i", "want", "can", "you", "looking", "for", "search", "a", "the"}
         
         query_words = []
-        for word in message_words:
+        for word in user_message.lower().split():
             clean_word = word.strip('.,!?;:')
             if clean_word and clean_word not in stop_words and len(clean_word) > 2:
                 query_words.append(clean_word)
         
         query = " ".join(query_words) if query_words else ""
-        
-        # Search
         products = db_search_products(db, query) if query else db.query(Product).limit(10).all()
         
-        # Store what we're about to show
         if products:
-            update_shown_products(db, session_id, products, query if query else "browse_all")
-        
-        # Format response
-        if not products:
-            # Try fallback
-            all_products = db.query(Product).limit(10).all()
-            if all_products:
-                update_shown_products(db, session_id, all_products, "fallback_browse")
-                product_list = _format_product_list(all_products)
-                response = f"No exact matches for '{query}', but here are some items:\n\n{product_list}"
-            else:
-                response = "No products found."
-                action = {"intent": "search", "query": query, "results": 0}
-                log_action(db, "search", "success", {"query": query}, {"results_count": 0}, user_message=user_message)
-                return response, action, []
+            update_last_shown_products(session_id, products)
+            session["booking_stage"] = "initial"
+            response = f"🔍 Found {len(products)} item(s):\n\n"
+            for idx, product in enumerate(products[:12], 1):
+                stock_status = "✅" if product.stock > 0 else "❌"
+                response += f"{idx}. **{product.name}** - ₹{product.price} {stock_status}\n"
+            response += "\nWhich would you like? (Say 'first', 'second', or 'last')"
         else:
-            product_list = _format_product_list(products)
-            response = f"I found {len(products)} items:\n\n{product_list}"
+            response = f"Sorry, no results for '{query}'. Try another search!"
         
-        action = {
-            "intent": "search_products",
-            "query": query,
-            "results_count": len(products)
-        }
-        log_action(db, "search", "success", {"query": query}, {"results_count": len(products)}, user_message=user_message)
+        action = {"intent": "search", "query": query, "results_count": len(products) if products else 0}
+        log_action(db, "search", "success", {"query": query}, {"results_count": len(products) if products else 0}, user_message=user_message)
         return response, action, ["search_products"]
     
-    # 4. Is this a greeting or conversational message?
-    conversational_patterns = [
-        ("hello", "Hi! I'm your shopping assistant. What would you like to find?"),
-        ("hi", "Hi! I'm your shopping assistant. What would you like to find?"),
-        ("hey", "Hi! I'm your shopping assistant. What would you like to find?"),
-        ("thanks", "You're welcome! Anything else I can help with?"),
-        ("thank you", "You're welcome! Anything else I can help with?"),
-        ("about", "I'm an AI Shopping Agent. I help you find and purchase products. What would you like to buy?"),
-        ("help", "I can:\n🔍 Search for products (e.g., 'Show me shirts')\n🛒 Buy products (e.g., 'I want the first one')\n\nWhat would you like?"),
-    ]
+    # GREETINGS
+    greetings = {
+        "hello": "👋 Hi! Welcome to our store. What would you like to buy?",
+        "hi": "👋 Hi there! How can I help you today?",
+        "hey": "👋 Hey! What are you looking for?",
+        "thanks": "😊 You're welcome! Anything else?",
+        "thank you": "💝 Thanks for shopping! Need anything else?",
+        "help": ("I can help you with:\n\n"
+                "🔍 **Search**: 'Show me shirts' or 'Show all'\n"
+                "👕 **Clothing**: 'Shirt', 'Saree', 'Dress', 'Tops', 'Jeans'\n"
+                "📦 **Browse**: 'Show all' or pick 'First', 'Second'\n"
+                "🛒 **Complete**: Full booking flow with color, size, address, payment\n\n"
+                "What would you like?"),
+    }
     
-    for pattern, response_text in conversational_patterns:
-        if pattern in user_lower:
-            action = {"intent": "conversational", "pattern": pattern}
-            log_action(db, "chat", "success", {"message": user_message, "intent": "conversational"},
-                      {"response": response_text}, user_message=user_message)
+    for greeting, response_text in greetings.items():
+        if greeting in user_lower:
+            session["booking_stage"] = "initial"
+            action = {"intent": "greeting", "type": greeting}
+            log_action(db, "chat", "success", {"message": user_message, "intent": "greeting"},
+                      {"greeting": greeting}, user_message=user_message)
             return response_text, action, []
     
-    # 5. Questions about products we just showed (color, size, image, etc)?
-    product_question_patterns = ["color", "colour", "image", "photo", "size", "how much", "price", "cost"]
-    if any(p in user_lower for p in product_question_patterns) and last_products:
-        first_prod = last_products[0]
-        response = (f"For **{first_prod['name']}** (₹{first_prod['price']}):\n"
-                   f"Would you like to:\n"
-                   f"- Buy this? Say 'yes' or 'first one'\n"
-                   f"- Search for something else?\n\n"
-                   f"What would you like?")
-        action = {"intent": "product_details_question", "product_id": first_prod["id"]}
-        log_action(db, "chat", "success", {"message": user_message, "intent": "product_details_question"},
-                  {"response": response}, user_message=user_message)
-        return response, action, []
-    
-    # 6. Fallback: If we can't reason about it, ask for clarification
-    # (only when we genuinely don't understand, not because keyword matching failed)
-    response = ("I'm not sure what you mean. Could you try:\n\n"
-               "🔍 'Search for [product]' (e.g., 'Show me shoes')\n"
-               "🛒 'Buy [product]' (e.g., 'I want the first one')\n"
-               "❓ Ask me anything about the app\n\n"
+    # DEFAULT
+    response = ("I'm not sure what you need. Try:\n\n"
+               "📦 **'Show all'** - browse all products\n"
+               "👕 **'Show me shirts'** - search for clothing\n"
+               "🎯 **'First' or 'Second'** - pick from list\n\n"
                "What would you like?")
     action = {"intent": "unclear"}
     log_action(db, "chat", "success", {"message": user_message, "intent": "unclear"},
-              {"response": response}, user_message=user_message)
+              {"response": "clarification_needed"}, user_message=user_message)
     return response, action, []
-
-
-def _format_product_list(products: List[Product]) -> str:
-    """Format products for display."""
-    text = ""
-    for idx, product in enumerate(products, 1):
-        stock_status = "In Stock" if product.stock > 0 else "Out of Stock"
-        text += f"{idx}. **{product.name}** - ₹{product.price}\n   {stock_status} ({product.stock} available)\n\n"
-    text += "Would you like to buy any of these, or should I search for something else?"
-    return text

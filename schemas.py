@@ -82,3 +82,18 @@ class ChatResponse(BaseModel):
     audit_entry: Optional[Dict[str, Any]] = None
     tool_calls: Optional[List[str]] = None
     session_id: Optional[str] = None  # Session ID for the client to track
+
+
+class CreateOrderRequest(BaseModel):
+    """Request to create Razorpay order."""
+    product_id: Optional[int] = None  # Optional - will fetch from session if not provided
+    session_id: str
+    payment_method: str = "online"  # "online" or "cod"
+
+
+class VerifyPaymentRequest(BaseModel):
+    """Request to verify Razorpay payment."""
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+    session_id: str

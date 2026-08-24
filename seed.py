@@ -1,4 +1,4 @@
-"""Seed the database with realistic products."""
+"""Seed the database with realistic products - Clothing Focused."""
 from database import SessionLocal, init_db, Product
 from datetime import datetime
 
@@ -6,33 +6,250 @@ from datetime import datetime
 init_db()
 db = SessionLocal()
 
-# Sample products spanning multiple categories with varied stock levels
 SEED_PRODUCTS = [
+    # ===== SHIRTS (Plain, Party, Formal) =====
     {
-        "name": "Premium Cotton T-Shirt",
-        "description": "Comfortable 100% organic cotton t-shirt, perfect for daily wear",
+        "name": "Plain Cotton Shirt - Blue",
+        "description": "Classic plain cotton shirt for casual daily wear",
         "price": 499.0,
         "stock": 25,
-        "category": "Apparel",
+        "category": "Shirt",
         "variants": {
+            "type": "Plain",
             "sizes": ["XS", "S", "M", "L", "XL", "XXL"],
-            "colors": ["White", "Black", "Navy Blue", "Grey"]
+            "colors": ["White", "Blue", "Black", "Grey"]
         }
     },
     {
+        "name": "Party Shirt - Printed",
+        "description": "Stylish printed shirt perfect for parties and gatherings",
+        "price": 799.0,
+        "stock": 18,
+        "category": "Shirt",
+        "variants": {
+            "type": "Party",
+            "sizes": ["S", "M", "L", "XL"],
+            "colors": ["Red", "Green", "Purple", "Orange"]
+        }
+    },
+    {
+        "name": "Formal White Shirt",
+        "description": "Premium formal shirt for office and formal occasions",
+        "price": 1299.0,
+        "stock": 15,
+        "category": "Shirt",
+        "variants": {
+            "type": "Formal",
+            "sizes": ["XS", "S", "M", "L", "XL", "XXL"],
+            "colors": ["White", "Light Blue", "Light Pink"]
+        }
+    },
+    
+    # ===== T-SHIRTS (Plain, Graphic) =====
+    {
+        "name": "Plain T-Shirt",
+        "description": "Comfortable 100% organic cotton t-shirt, perfect for daily wear",
+        "price": 399.0,
+        "stock": 35,
+        "category": "T-Shirt",
+        "variants": {
+            "type": "Plain",
+            "sizes": ["XS", "S", "M", "L", "XL", "XXL"],
+            "colors": ["White", "Black", "Navy Blue", "Grey", "Red"]
+        }
+    },
+    {
+        "name": "Graphic Printed T-Shirt",
+        "description": "Trendy graphic printed t-shirt with modern designs",
+        "price": 599.0,
+        "stock": 22,
+        "category": "T-Shirt",
+        "variants": {
+            "type": "Graphic",
+            "sizes": ["S", "M", "L", "XL"],
+            "colors": ["Black", "White", "Navy"]
+        }
+    },
+
+    # ===== SAREES (Kachipuram, Plain, Party, Traditional) =====
+    {
+        "name": "Kachipuram Silk Saree",
+        "description": "Traditional Kachipuram silk saree with zari border",
+        "price": 3999.0,
+        "stock": 8,
+        "category": "Saree",
+        "variants": {
+            "type": "Kachipuram",
+            "sizes": ["One Size"],
+            "colors": ["Gold", "Red", "Green", "Purple"]
+        }
+    },
+    {
+        "name": "Plain Cotton Saree",
+        "description": "Simple yet elegant plain cotton saree for everyday wear",
+        "price": 899.0,
+        "stock": 20,
+        "category": "Saree",
+        "variants": {
+            "type": "Plain",
+            "sizes": ["One Size"],
+            "colors": ["White", "Beige", "Grey", "Black"]
+        }
+    },
+    {
+        "name": "Party Wear Saree - Embroidered",
+        "description": "Stunning embroidered party wear saree for special occasions",
+        "price": 5999.0,
+        "stock": 5,
+        "category": "Saree",
+        "variants": {
+            "type": "Party Wear",
+            "sizes": ["One Size"],
+            "colors": ["Red", "Maroon", "Deep Blue"]
+        }
+    },
+    {
+        "name": "Traditional Handloom Saree",
+        "description": "Authentic handloom saree with traditional weaving patterns",
+        "price": 2499.0,
+        "stock": 12,
+        "category": "Saree",
+        "variants": {
+            "type": "Traditional",
+            "sizes": ["One Size"],
+            "colors": ["Maroon", "Navy", "Forest Green"]
+        }
+    },
+
+    # ===== DRESS =====
+    {
+        "name": "Casual Summer Dress",
+        "description": "Light and comfortable summer dress perfect for hot days",
+        "price": 699.0,
+        "stock": 16,
+        "category": "Dress",
+        "variants": {
+            "type": "Casual",
+            "sizes": ["XS", "S", "M", "L", "XL"],
+            "colors": ["Floral", "Solid Blue", "Solid Pink"]
+        }
+    },
+    {
+        "name": "Formal Evening Dress",
+        "description": "Elegant formal dress for parties and special events",
+        "price": 2999.0,
+        "stock": 9,
+        "category": "Dress",
+        "variants": {
+            "type": "Formal",
+            "sizes": ["S", "M", "L", "XL"],
+            "colors": ["Black", "Navy", "Maroon"]
+        }
+    },
+
+    # ===== TOPS (Short, Long, Chikankari, Traditional, Party) =====
+    {
+        "name": "Short Sleeve Top",
+        "description": "Comfortable short sleeve top for casual wear",
+        "price": 499.0,
+        "stock": 24,
+        "category": "Tops",
+        "variants": {
+            "type": "Short Sleeve",
+            "sizes": ["XS", "S", "M", "L", "XL"],
+            "colors": ["White", "Black", "Blue", "Green"]
+        }
+    },
+    {
+        "name": "Long Sleeve Top",
+        "description": "Versatile long sleeve top, perfect for layering",
+        "price": 699.0,
+        "stock": 18,
+        "category": "Tops",
+        "variants": {
+            "type": "Long Sleeve",
+            "sizes": ["XS", "S", "M", "L", "XL", "XXL"],
+            "colors": ["Cream", "Black", "Maroon"]
+        }
+    },
+    {
+        "name": "Chikankari Embroidered Top",
+        "description": "Traditional chikankari embroidered top with delicate work",
+        "price": 1299.0,
+        "stock": 11,
+        "category": "Tops",
+        "variants": {
+            "type": "Chikankari",
+            "sizes": ["S", "M", "L", "XL"],
+            "colors": ["White", "Off-White", "Light Blue"]
+        }
+    },
+    {
+        "name": "Traditional Ethnic Top",
+        "description": "Classic traditional top with ethnic patterns",
+        "price": 899.0,
+        "stock": 14,
+        "category": "Tops",
+        "variants": {
+            "type": "Traditional",
+            "sizes": ["S", "M", "L", "XL"],
+            "colors": ["Maroon", "Navy", "Mustard"]
+        }
+    },
+    {
+        "name": "Party Wear Sequin Top",
+        "description": "Glamorous party wear top with sequins and embellishments",
+        "price": 1599.0,
+        "stock": 8,
+        "category": "Tops",
+        "variants": {
+            "type": "Party Wear",
+            "sizes": ["XS", "S", "M", "L"],
+            "colors": ["Black", "Red", "Gold"]
+        }
+    },
+
+    # ===== JEANS =====
+    {
+        "name": "Slim Fit Denim Jeans",
+        "description": "Classic slim fit jeans with comfortable stretch",
+        "price": 1299.0,
+        "stock": 20,
+        "category": "Jeans",
+        "variants": {
+            "fit": "Slim Fit",
+            "sizes": ["28", "30", "32", "34", "36"],
+            "colors": ["Dark Blue", "Light Blue", "Black"]
+        }
+    },
+    {
+        "name": "Skinny Fit Blue Jeans",
+        "description": "Trendy skinny fit jeans for a modern look",
+        "price": 1199.0,
+        "stock": 17,
+        "category": "Jeans",
+        "variants": {
+            "fit": "Skinny",
+            "sizes": ["26", "28", "30", "32"],
+            "colors": ["Dark Blue", "Black", "Blue"]
+        }
+    },
+
+    # ===== NON-CLOTHING ITEMS =====
+    {
         "name": "Wireless Bluetooth Headphones",
-        "description": "Noise-cancelling wireless headphones with 30-hour battery life",
+        "description": "Noise-cancelling wireless headphones with 30-hour battery",
         "price": 3999.0,
         "stock": 5,
         "category": "Electronics",
         "variants": {
-            "colors": ["Black", "Silver", "Rose Gold"],
+            "colors": ["Black", "Silver"],
             "sizes": ["One Size"]
         }
     },
     {
         "name": "Stainless Steel Water Bottle",
-        "description": "Keeps drinks cold for 24 hours or hot for 12 hours. BPA-free.",
+        "description": "Keeps drinks cold for 24 hours or hot for 12 hours",
         "price": 799.0,
         "stock": 45,
         "category": "Accessories",
@@ -42,167 +259,35 @@ SEED_PRODUCTS = [
         }
     },
     {
-        "name": "Running Shoes - Pro Edition",
-        "description": "Lightweight, breathable running shoes with advanced cushioning",
+        "name": "Running Shoes Pro",
+        "description": "Lightweight, breathable running shoes with cushioning",
         "price": 4999.0,
         "stock": 0,
         "category": "Footwear",
         "variants": {
-            "sizes": ["6", "7", "8", "9", "10", "11", "12"],
-            "colors": ["White/Black", "Blue/Orange"]
+            "sizes": ["6", "7", "8", "9", "10", "11"],
+            "colors": ["White", "Black"]
         }
     },
     {
-        "name": "Organic Green Tea (25 bags)",
-        "description": "Premium organic green tea from Darjeeling, antioxidant-rich",
+        "name": "Organic Green Tea",
+        "description": "Premium organic green tea from Darjeeling",
         "price": 349.0,
         "stock": 120,
         "category": "Beverages",
         "variants": {
-            "types": ["Classic", "Jasmine", "Honey Lemon"],
+            "types": ["Classic", "Jasmine"],
             "sizes": ["25 bags"]
         }
     },
     {
-        "name": "Yoga Mat - Premium Non-Slip",
-        "description": "6mm thick yoga mat with non-slip surface, eco-friendly TPE material",
+        "name": "Yoga Mat Premium",
+        "description": "6mm thick yoga mat with non-slip surface",
         "price": 1299.0,
         "stock": 18,
         "category": "Sports",
         "variants": {
-            "colors": ["Purple", "Black", "Green", "Pink"],
-            "sizes": ["173cm x 61cm"]
-        }
-    },
-    {
-        "name": "Smart Watch Fitness Tracker",
-        "description": "Monitor heart rate, sleep, steps, calories. Water-resistant up to 50m",
-        "price": 5999.0,
-        "stock": 2,
-        "category": "Electronics",
-        "variants": {
-            "colors": ["Black", "Silver", "Gold"],
-            "sizes": ["One Size"]
-        }
-    },
-    {
-        "name": "Bamboo Cutting Board Set",
-        "description": "Set of 3 bamboo cutting boards with storage case",
-        "price": 899.0,
-        "stock": 34,
-        "category": "Kitchen",
-        "variants": {
-            "sizes": ["Set of 3"],
-            "colors": ["Natural Bamboo"]
-        }
-    },
-    {
-        "name": "USB-C Fast Charging Cable",
-        "description": "Durable 2m USB-C to USB-C cable, 100W fast charging support",
-        "price": 299.0,
-        "stock": 200,
-        "category": "Electronics",
-        "variants": {
-            "lengths": ["1m", "2m", "3m"],
-            "colors": ["Black", "White"]
-        }
-    },
-    {
-        "name": "Portable Solar Power Bank",
-        "description": "20000mAh solar-powered portable charger with dual USB ports",
-        "price": 2499.0,
-        "stock": 11,
-        "category": "Electronics",
-        "variants": {
-            "colors": ["Black", "Green"],
-            "sizes": ["One Size"]
-        }
-    },
-    {
-        "name": "Adjustable Dumbbell Set",
-        "description": "5-25kg adjustable dumbbells with stand, perfect for home gym",
-        "price": 8999.0,
-        "stock": 6,
-        "category": "Sports",
-        "variants": {
-            "colors": ["Black"],
-            "sizes": ["5-25kg"]
-        }
-    },
-    {
-        "name": "Natural Bamboo Toothbrush (Pack of 4)",
-        "description": "Eco-friendly bamboo toothbrushes with soft bristles",
-        "price": 199.0,
-        "stock": 67,
-        "category": "Personal Care",
-        "variants": {
-            "colors": ["Natural"],
-            "packs": ["4-pack"]
-        }
-    },
-    {
-        "name": "Leather Messenger Bag",
-        "description": "Premium genuine leather messenger bag, perfect for office or travel",
-        "price": 6999.0,
-        "stock": 8,
-        "category": "Bags",
-        "variants": {
-            "colors": ["Brown", "Black", "Tan"],
-            "sizes": ["One Size"]
-        }
-    },
-    {
-        "name": "Indoor Plant - Monstera",
-        "description": "Beautiful Monstera Deliciosa plant with ceramic pot included",
-        "price": 1599.0,
-        "stock": 12,
-        "category": "Plants",
-        "variants": {
-            "sizes": ["Small", "Medium", "Large"],
-            "pots": ["Ceramic - White", "Ceramic - Terracotta"]
-        }
-    },
-    {
-        "name": "Noise-Cancelling Earplugs",
-        "description": "Reusable noise-cancelling earplugs, perfect for travel and focus",
-        "price": 1299.0,
-        "stock": 0,
-        "category": "Accessories",
-        "variants": {
-            "sizes": ["S", "M", "L"],
-            "colors": ["Transparent"]
-        }
-    },
-    {
-        "name": "Mechanical Keyboard - RGB",
-        "description": "Mechanical gaming keyboard with RGB lighting and hot-swap switches",
-        "price": 7499.0,
-        "stock": 3,
-        "category": "Electronics",
-        "variants": {
-            "colors": ["Black"],
-            "switches": ["Blue", "Brown", "Red"]
-        }
-    },
-    {
-        "name": "Sunscreen SPF 50+ Spray",
-        "description": "Broad-spectrum water-resistant sunscreen, reef-safe formula",
-        "price": 599.0,
-        "stock": 55,
-        "category": "Personal Care",
-        "variants": {
-            "sizes": ["200ml", "400ml"],
-            "types": ["Spray", "Lotion"]
-        }
-    },
-    {
-        "name": "Bluetooth Speaker - Portable",
-        "description": "Waterproof portable Bluetooth speaker with 12-hour battery",
-        "price": 2299.0,
-        "stock": 9,
-        "category": "Electronics",
-        "variants": {
-            "colors": ["Black", "Blue", "Red"],
+            "colors": ["Purple", "Black", "Green"],
             "sizes": ["One Size"]
         }
     },

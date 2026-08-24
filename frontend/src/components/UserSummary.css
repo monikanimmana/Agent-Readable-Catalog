@@ -1,28 +1,129 @@
 .user-summary {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border-radius: 12px;
+  color: #e0e0e0;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* Stats Section */
+.stats-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .summary-card {
-  background-color: var(--surface-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: var(--spacing-lg);
-  text-align: center;
+  background: rgba(45, 212, 191, 0.1);
+  border: 1px solid rgba(45, 212, 191, 0.3);
+  border-radius: 8px;
+  padding: 16px;
+  backdrop-filter: blur(10px);
 }
 
 .summary-label {
-  margin: 0 0 var(--spacing-md) 0;
   font-size: 12px;
-  color: var(--text-muted);
+  color: #a0a0a0;
+  margin: 0 0 8px 0;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .summary-value {
-  margin: 0;
   font-size: 28px;
+  font-weight: bold;
+  color: #2dd4bf;
+  margin: 0;
+}
+
+/* Order Section */
+.order-section {
+  background: rgba(45, 212, 191, 0.05);
+  border: 1px solid rgba(45, 212, 191, 0.2);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 8px;
+}
+
+.order-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2dd4bf;
+  margin: 0 0 16px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.order-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.detail-label {
+  color: #a0a0a0;
   font-weight: 500;
-  color: var(--primary);
+}
+
+.detail-value {
+  color: #e0e0e0;
+  font-weight: 600;
+  text-align: right;
+}
+
+.detail-value.status {
+  color: #2dd4bf;
+  font-weight: bold;
+  background: rgba(45, 212, 191, 0.2);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+/* Quick Info */
+.quick-info {
+  background: rgba(45, 212, 191, 0.1);
+  border-left: 3px solid #2dd4bf;
+  border-radius: 4px;
+  padding: 12px;
+  margin-top: 8px;
+}
+
+.info-text {
+  font-size: 12px;
+  color: #2dd4bf;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Scrollbar styling */
+.user-summary::-webkit-scrollbar {
+  width: 6px;
+}
+
+.user-summary::-webkit-scrollbar-track {
+  background: rgba(45, 212, 191, 0.05);
+  border-radius: 3px;
+}
+
+.user-summary::-webkit-scrollbar-thumb {
+  background: rgba(45, 212, 191, 0.3);
+  border-radius: 3px;
+}
+
+.user-summary::-webkit-scrollbar-thumb:hover {
+  background: rgba(45, 212, 191, 0.5);
 }

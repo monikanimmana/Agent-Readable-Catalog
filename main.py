@@ -4,15 +4,27 @@ from fastapi.middleware.cors import CORSMiddleware
 import google.generativeai as genai
 import os
 import json
+import uuid
 from sqlalchemy.orm import Session
 from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
 
 from database import init_db, get_db, Product, AuditLog
-from schemas import ChatRequest, ChatResponse
+from schemas import ChatRequest, ChatResponse, CreateOrderRequest, VerifyPaymentRequest
 from search import search_products as db_search_products, check_product_stock, get_product_price
 from audit import log_action, get_audit_logs
 from razorpay_service import RazorpayGuardedClient, get_razorpay_client
+from context_manager import (
+    get_last_shown_products as get_last_shown_products_for_session,
+    update_last_shown_products,
+    resolve_product_reference as resolve_ref,
+    get_session
+)
+
+# Import Razorpay for payment verification
+import razorpay
+import hmac
+import hashlib
 
 # Load environment variables
 load_dotenv()
@@ -47,6 +59,30 @@ except Exception as e:
     print(f"[WARN] Failed to initialize Gemini API: {e}. Using mock responses for demo.")
 
 # ==================== MOCK RESPONSE HELPER ====================
+def get_last_shown_products(db: Session, session_id: str) -> List[Dict]:
+    """Get last shown products for this session."""
+    return get_last_shown_products_for_session(session_id)
+
+
+def update_shown_products(db: Session, session_id: str, products: List[Product], query: str = None) -> None:
+    """Update shown products for this session."""
+    update_last_shown_products(session_id, products)
+
+
+def resolve_product_reference(db: Session, session_id: str, user_message: str) -> Optional[Product]:
+    """
+    Resolve product references like "first", "second", "that one", "it", "last".
+    Returns the Product object if found, None otherwise.
+    """
+    last_products = get_last_shown_products(db, session_id)
+    product_dict = resolve_ref(user_message, last_products)
+    
+    if product_dict:
+        # Look up the actual product from the database
+        return db.query(Product).filter(Product.id == product_dict["id"]).first()
+    return None
+
+
 def get_mock_agent_response(user_message: str, db: Session, session_id: str) -> tuple[str, list]:
     """
     Generate a mock agent response with proper intent detection and conversation context.
@@ -678,6 +714,179 @@ IMPORTANT INSTRUCTIONS:
 {products_context}"""
 
 
+# ==================== PAYMENT ENDPOINTS ====================
+
+@app.post("/purchase/create-order")
+async def create_order(request: CreateOrderRequest, db: Session = Depends(get_db)):
+    """Create a Razorpay order for payment."""
+    try:
+        # If no product_id in request, try to get from session
+        product_id = request.product_id
+        if not product_id:
+            from context_manager import get_session
+            session = get_session(request.session_id)
+            pending_order = session.get("pending_order", {})
+            product_id = pending_order.get("product_id")
+        
+        if not product_id:
+            log_action(db, "create_order", "failed", {"session_id": request.session_id}, {"error": "No product found"})
+            return {"error": "no_product", "message": "No product selected"}
+        
+        # Get product
+        product = db.query(Product).filter(Product.id == product_id).first()
+        if not product:
+            log_action(db, "create_order", "failed", {"product_id": product_id}, {"error": "Product not found"})
+            return {"error": "product_not_found", "message": "Product not found"}
+        
+        # Check stock
+        if product.stock <= 0:
+            log_action(db, "create_order", "blocked", {"product_id": product_id}, {"reason": "out_of_stock"})
+            return {"error": "out_of_stock", "message": f"{product.name} is out of stock"}
+        
+        # Create Razorpay order
+        try:
+            razorpay_key_id = os.getenv("RAZORPAY_KEY_ID")
+            razorpay_key_secret = os.getenv("RAZORPAY_KEY_SECRET")
+            
+            print(f"[DEBUG] Key ID: {razorpay_key_id}")
+            print(f"[DEBUG] Key Secret: {razorpay_key_secret[:10]}...")
+            
+            # Check if using fake/demo keys (only the placeholder keys)
+            is_demo_key = (razorpay_key_id == "rzp_test_TESTKEY123456" or 
+                          razorpay_key_secret == "rzp_test_TESTKEYSECRET123" or
+                          not razorpay_key_id or not razorpay_key_secret)
+            
+            print(f"[DEBUG] Is demo key: {is_demo_key}")
+            
+            if is_demo_key:
+                # Demo mode: Generate fake Razorpay order ID
+                import uuid
+                fake_order_id = f"order_{uuid.uuid4().hex[:12]}"
+                amount_paise = int(product.price * 100)
+                
+                print(f"[DEMO] Using fake Razorpay order: {fake_order_id}")
+                
+                log_action(
+                    db=db,
+                    action_type="create_order",
+                    status="success",
+                    input_data={"product_id": product_id, "amount": product.price, "mode": "demo"},
+                    output_data={"razorpay_order_id": fake_order_id, "mode": "demo"},
+                    razorpay_order_id=fake_order_id
+                )
+                
+                return {
+                    "order_id": fake_order_id,
+                    "amount": amount_paise,
+                    "currency": "INR",
+                    "key_id": razorpay_key_id,
+                    "product_id": product_id,
+                    "product_name": product.name,
+                    "product_price": product.price,
+                    "mode": "demo"
+                }
+            
+            # Real keys: Use actual Razorpay API
+            print(f"[INFO] Using real Razorpay API with key: {razorpay_key_id[:20]}...")
+            razorpay_client = razorpay.Client(
+                auth=(razorpay_key_id, razorpay_key_secret)
+            )
+            amount_paise = int(product.price * 100)
+            razorpay_order = razorpay_client.order.create({
+                "amount": amount_paise,
+                "currency": "INR",
+                "receipt": f"receipt_{request.session_id}_{product_id}"
+            })
+            
+            order_id = razorpay_order["id"]
+            print(f"[INFO] Razorpay order created: {order_id}")
+            
+            log_action(
+                db=db,
+                action_type="create_order",
+                status="success",
+                input_data={"product_id": product_id, "amount": product.price},
+                output_data={"razorpay_order_id": order_id},
+                razorpay_order_id=order_id
+            )
+            
+            return {
+                "order_id": order_id,
+                "amount": amount_paise,
+                "currency": "INR",
+                "key_id": os.getenv("RAZORPAY_KEY_ID"),
+                "product_id": product_id,
+                "product_name": product.name,
+                "product_price": product.price
+            }
+        except Exception as e:
+            print(f"[ERROR] Razorpay order creation failed: {e}")
+            log_action(db, "create_order", "failed", {"product_id": product_id}, {"error": str(e)})
+            return {"error": "razorpay_error", "message": "Failed to create order"}
+            
+    except Exception as e:
+        print(f"[ERROR] Create order endpoint error: {e}")
+        return {"error": "server_error", "message": "Internal server error"}
+
+
+@app.post("/purchase/verify")
+async def verify_payment(request: VerifyPaymentRequest, db: Session = Depends(get_db)):
+    """Verify Razorpay payment signature and confirm order."""
+    try:
+        razorpay_client = razorpay.Client(
+            auth=(os.getenv("RAZORPAY_KEY_ID"), os.getenv("RAZORPAY_KEY_SECRET"))
+        )
+        
+        # Verify signature
+        params_dict = {
+            "razorpay_order_id": request.razorpay_order_id,
+            "razorpay_payment_id": request.razorpay_payment_id,
+            "razorpay_signature": request.razorpay_signature
+        }
+        
+        try:
+            razorpay_client.utility.verify_payment_signature(params_dict)
+            
+            # Signature valid → Payment successful
+            log_action(
+                db=db,
+                action_type="payment_verified",
+                status="success",
+                input_data=params_dict,
+                output_data={"status": "payment_confirmed"},
+                razorpay_order_id=request.razorpay_order_id
+            )
+            
+            return {
+                "status": "success",
+                "message": "Payment confirmed. Your order has been placed!",
+                "order_id": request.razorpay_order_id,
+                "payment_id": request.razorpay_payment_id
+            }
+            
+        except razorpay.errors.SignatureVerificationError:
+            # Signature invalid → Payment failed
+            log_action(
+                db=db,
+                action_type="payment_failed",
+                status="failed",
+                input_data=params_dict,
+                output_data={"error": "signature_verification_failed"},
+                razorpay_order_id=request.razorpay_order_id
+            )
+            
+            return {
+                "status": "failed",
+                "message": "Payment verification failed. Please try again.",
+                "order_id": request.razorpay_order_id
+            }
+            
+    except Exception as e:
+        print(f"[ERROR] Payment verification error: {e}")
+        log_action(db, "payment_verified", "failed", {}, {"error": str(e)})
+        return {"status": "error", "message": "Payment verification error"}
+
+
 # ==================== STARTUP ====================
 
 @app.on_event("startup")
@@ -693,4 +902,4 @@ async def startup_event():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="127.0.0.1", port=5000)
